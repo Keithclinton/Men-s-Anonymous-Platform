@@ -3,6 +3,11 @@ name: mens-platform
 # Two separate Postgres instances on purpose, even in dev — the whole point of the
 # identity vault is that it's not just a different schema, it's a different blast radius.
 # See ARCHITECTURE.md §3.
+#
+# Every port below is bound to 127.0.0.1 explicitly. Docker's default `'host:container'`
+# syntax publishes on 0.0.0.0 (all interfaces) — fine on a fully firewalled machine, but
+# these credentials are dev-only placeholders and this file is public, so nothing here
+# should be reachable from outside the host under any network configuration.
 services:
   postgres-core:
     image: postgres:16-alpine
@@ -12,7 +17,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: mens_platform_core
     ports:
-      - '5442:5432'
+      - '127.0.0.1:5442:5432'
     volumes:
       - postgres-core-data:/var/lib/postgresql/data
     healthcheck:
@@ -29,7 +34,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: mens_platform_vault
     ports:
-      - '5443:5432'
+      - '127.0.0.1:5443:5432'
     volumes:
       - postgres-vault-data:/var/lib/postgresql/data
     healthcheck:
@@ -42,7 +47,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - '6379:6379'
+      - '127.0.0.1:6379:6379'
     volumes:
       - redis-data:/data
     healthcheck:
