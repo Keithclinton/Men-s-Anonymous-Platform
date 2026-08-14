@@ -1,0 +1,23 @@
+{
+  "name": "mens-anonymous-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Anonymous virtual counseling, coaching, mentoring & support platform for men",
+  "workspaces": [
+    "apps/*",
+    "libs/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @map/shared && npm run build -w @map/worker",
+    "build:shared": "npm run build -w @map/shared",
+    "dev:worker": "npm run start:dev -w @map/worker",
+    "start:worker": "npm run start -w @map/worker",
+    "lint": "npm run lint -w @map/worker -w @map/shared --if-present",
+    "docker:up": "docker compose -f infra/docker/docker-compose.yml up -d",
+    "docker:down": "docker compose -f infra/docker/docker-compose.yml down",
+    "docker:logs": "docker compose -f infra/docker/docker-compose.yml logs -f"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

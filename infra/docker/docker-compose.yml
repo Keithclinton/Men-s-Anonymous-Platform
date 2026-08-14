@@ -1,0 +1,52 @@
+services:
+  postgres-core:
+    image: postgres:16-alpine
+    container_name: map-postgres-core
+    environment:
+      POSTGRES_USER: map
+      POSTGRES_PASSWORD: map_secret
+      POSTGRES_DB: map_core
+    ports:
+      - "5432:5432"
+    volumes:
+      - map_core_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U map -d map_core"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  postgres-vault:
+    image: postgres:16-alpine
+    container_name: map-postgres-vault
+    environment:
+      POSTGRES_USER: map
+      POSTGRES_PASSWORD: map_secret
+      POSTGRES_DB: map_vault
+    ports:
+      - "5433:5432"
+    volumes:
+      - map_vault_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U map -d map_vault"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: map-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - map_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  map_core_data:
+  map_vault_data:
+  map_redis_data:
