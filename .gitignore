@@ -5,11 +5,14 @@ build/
 .env.local
 .env.*.local
 *.log
+npm-debug.log*
 .DS_Store
+Thumbs.db
 coverage/
 .tmp-*/
 .idea/
-.vscode/
+.vscode/*
+!.vscode/extensions.json
 *.tsbuildinfo
 apps/api/prisma/*.db
 apps/api/prisma/*.db-journal
