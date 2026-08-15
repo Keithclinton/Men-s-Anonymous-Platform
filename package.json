@@ -8,11 +8,15 @@
     "libs/*"
   ],
   "scripts": {
-    "build": "npm run build -w @map/shared && npm run build -w @map/worker",
+    "dev": "npm run dev -w @map/web",
+    "dev:web": "npm run dev -w @map/web",
+    "build": "npm run build -w @map/web",
+    "build:web": "npm run build -w @map/web",
+    "preview": "npm run preview -w @map/web",
     "build:shared": "npm run build -w @map/shared",
     "dev:worker": "npm run start:dev -w @map/worker",
     "start:worker": "npm run start -w @map/worker",
-    "lint": "npm run lint -w @map/worker -w @map/shared --if-present",
+    "lint": "npm run lint -w @map/web -w @map/worker -w @map/shared --if-present",
     "docker:up": "docker compose -f infra/docker/docker-compose.yml up -d",
     "docker:down": "docker compose -f infra/docker/docker-compose.yml down",
     "docker:logs": "docker compose -f infra/docker/docker-compose.yml logs -f"
