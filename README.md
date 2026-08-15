@@ -5,6 +5,11 @@ support platform. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design and
 [API_REFERENCE.md](API_REFERENCE.md) for every endpoint — this file is how to get it
 running, locally and on Vercel.
 
+> This repo root is the **backend**. The web client lives in
+> [`apps/web`](apps/web/README.md) — it's a separate, self-contained app (own
+> `package.json`, own Vercel project) that talks to this API as a different origin via
+> `VITE_API_URL`. Run each from its own folder; they don't share a build or a deploy.
+
 ## Stack
 
 NestJS · PostgreSQL x2 via Prisma (app core + identity vault, kept physically separate —

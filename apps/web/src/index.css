@@ -1,0 +1,108 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #0e1210;
+  --color-ink-2: #141a16;
+  --color-surface: #1c2420;
+  --color-surface-2: #232c27;
+  --color-line: #2e3a33;
+  --color-cream: #f3efe6;
+  --color-mist: #b4beb6;
+  --color-sage: #8fad90;
+  --color-brass: #c9a66b;
+  --color-brass-press: #b89455;
+  --color-danger: #e08b7a;
+  --font-display: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+html,
+body {
+  overflow-x: clip;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  min-height: 100dvh;
+}
+
+body {
+  margin: 0;
+  background: var(--color-ink);
+  color: var(--color-cream);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+input,
+textarea,
+select,
+button {
+  font: inherit;
+}
+
+::selection {
+  background: rgba(201, 166, 107, 0.35);
+  color: var(--color-cream);
+}
+
+input[type='datetime-local'] {
+  color-scheme: dark;
+}
+
+.atmosphere {
+  background:
+    radial-gradient(900px 520px at 18% -8%, rgba(143, 173, 144, 0.16), transparent 58%),
+    radial-gradient(720px 480px at 108% 92%, rgba(201, 166, 107, 0.1), transparent 52%),
+    radial-gradient(500px 380px at 50% 110%, rgba(143, 173, 144, 0.06), transparent 60%),
+    var(--color-ink);
+}
+
+.atmosphere::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  opacity: 0.045;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.panel {
+  position: relative;
+  background: color-mix(in srgb, var(--color-surface) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-cream) 8%, var(--color-line));
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--color-cream) 12%, transparent) inset,
+    0 28px 80px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(22px);
+}
+
+.panel::before {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0 12% auto;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--color-cream) 28%, transparent),
+    transparent
+  );
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
