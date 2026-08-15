@@ -103,14 +103,16 @@ export class BookingService {
   }
 
   async getById(bookingId: string, actorId: string) {
-    return this.requireParticipant(bookingId, actorId, { session: true });
+    return this.requireParticipant(bookingId, actorId, {
+      session: { include: { feedback: true } },
+    });
   }
 
   async listMine(userId: string) {
     return this.prisma.booking.findMany({
       where: { OR: [{ clientId: userId }, { providerId: userId }] },
       orderBy: { scheduledStart: 'desc' },
-      include: { session: true },
+      include: { session: { include: { feedback: true } } },
     });
   }
 
