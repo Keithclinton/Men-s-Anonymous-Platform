@@ -16,17 +16,19 @@ Everything else (booking, billing, video) is comparatively standard and shouldn'
 | Language | TypeScript | Type safety matters when sensitive fields flow through many layers |
 | Framework | NestJS | Modular by design, DI, guards/interceptors map well to auth & encryption boundaries |
 | Primary DB | PostgreSQL | ACID for bookings/billing, row-level security for tenant isolation |
-| Cache/queue | Redis + BullMQ | Sessions, rate limiting, presence, background jobs |
+| Cache | Redis | Rate-limit counters — see the deployment note below on why there's no queue here |
 | Object storage | S3-compatible, server-side encrypted | Resource library assets, never session content by default |
 | ORM | Prisma | Clear schema, good migration story |
-| Real-time | Socket.IO (chat/presence) + managed WebRTC (Daily.co / Twilio Video / Agora) | Building your own SFU (mediasoup/Janus) is a valid path later, but not for MVP |
+| Real-time | Socket.IO (chat/presence) + managed WebRTC (Daily.co / Twilio Video / Agora) | A self-hosted SFU (mediasoup/Janus) needs a persistent process, which is off the table given the serverless deployment target below — managed WebRTC it is |
 | Payments | M-Pesa (Safaricom Daraja API) now, Pesapal later — behind a common gateway abstraction | M-Pesa covers the primary market; Pesapal adds cards/other rails later without touching billing logic |
 | Secrets/keys | AWS KMS or HashiCorp Vault | Envelope encryption for PII fields |
-| Infra | Docker → ECS/Fargate or Kubernetes later | Start simple |
-| IaC/CI | Terraform + GitHub Actions | |
-| Observability | Pino (with redaction) + Prometheus/Grafana + Sentry (PII-scrubbed) | |
+| Infra | Vercel (serverless functions) | Chosen over the originally-sketched Docker→ECS/Fargate path — see §13 for what that actually changes |
+| IaC/CI | GitHub Actions (build+lint) | Terraform doesn't apply the same way once infra is a managed platform rather than provisioned containers |
+| Observability | Pino (with redaction) + Vercel's own function logs | Prometheus/Grafana assumed a host you run yourself; revisit if that changes |
 
 Start as a **modular monolith** (NestJS modules with strict boundaries), not microservices. The one exception is the **Identity Vault** (below) — that should be network-isolated from day one even if it's just a separate schema/DB instance, because retrofitting that isolation later is painful.
+
+**No persistent worker process.** The original sketch of this document assumed a long-running `apps/worker` consuming a BullMQ queue for notification delivery, billing reconciliation, and match-expiry timers. Vercel serverless functions have no facility for a persistent process — they spin up per-request and terminate. §13 covers what replaced each of those three responsibilities.
 
 ## 3. The Core Idea: Identity Vault Separation
 
@@ -125,8 +127,10 @@ Feedback                     AuditLog
 ## 7.Folder Structure
 
 ```
+api/
+  index.ts                # Vercel serverless entry point — see §13
 apps/
-  api/                    # main NestJS app
+  api/                    # the whole app
     src/
       modules/
         auth/
@@ -149,13 +153,8 @@ apps/
         encryption/
         filters/
       config/
-  worker/                 # BullMQ job processor (notifications, billing reconciliation, matching)
-libs/
-  shared/                 # shared DTOs/types between api & worker
-infra/
-  docker/
-  terraform/
-  k8s/                    # if/when you outgrow ECS/Fargate
+      create-app.ts       # shared bootstrap for both main.ts and api/index.ts
+vercel.json                # rewrites + cron schedule
 ```
 
 ## 8. Phased Roadmap
@@ -241,7 +240,7 @@ Define a `PaymentGateway` interface in the `billing` module (`initiateCharge`, `
 - **STK Push (Lipa na M-Pesa Online)** for client charges: your server requests Safaricom to prompt the customer's phone; customer enters PIN; result comes back **asynchronously** to a callback URL you register — not in the initiating response. This means the booking/payment record must start in a `pending` state and transition on callback, not on the initial API response.
 - **OAuth token caching:** Daraja access tokens expire hourly — cache in Redis, refresh proactively, don't fetch per-request.
 - **Idempotency:** every STK push returns a `CheckoutRequestID`/`MerchantRequestID` — use it as the idempotency key, since callbacks can arrive more than once or be delayed.
-- **Reconciliation job (important):** callbacks occasionally never arrive (network drop, user closes the prompt). Run a BullMQ job that polls the **STK Push Query API** for any payment still `pending` after N minutes, so a real transaction doesn't get silently stuck. Don't rely on the callback alone.
+- **Reconciliation job (important):** callbacks occasionally never arrive (network drop, user closes the prompt). Run a scheduled sweep (§13: a Vercel Cron Job here, a BullMQ job if you're running this somewhere with a persistent process instead) that polls the **STK Push Query API** for any payment still `pending` after N minutes, so a real transaction doesn't get silently stuck. Don't rely on the callback alone.
 - **Provider payouts (B2C):** paying providers out is a separate Daraja product (Business-to-Customer) with its own credentialing (security credential encrypted against Safaricom's public cert) and its own approval process with Safaricom — budget onboarding lead time for this, it's slower than getting C2B/STK push approved.
 - **Infra requirement:** the callback URL must be a publicly reachable HTTPS endpoint, including during development/certification with Safaricom — plan for a stable tunnel (ngrok or similar) or a real staging domain early, it'll block your Daraja sandbox-to-production certification otherwise.
 
@@ -257,9 +256,62 @@ Given the concept note's subscription model, I'd ship Phase 1 with pay-per-sessi
 
 Pesapal is an aggregator (M-Pesa + cards + other mobile money) with a redirect/iframe checkout and its own callback (IPN) model — conceptually similar async shape to M-Pesa, so the `PaymentGateway` abstraction holds up. Main reason to add it later: cards for clients outside Kenya, and (per §11c) real recurring billing if you want that before building the manual re-prompt flow.
 
-## 12. Open Decisions Worth Revisiting With You
+## 13. Deployment: Vercel Serverless
 
-- Video provider: managed (Daily.co/Twilio/Agora — faster, less ops) vs. self-hosted SFU (mediasoup — full data control, more engineering)
+The stack table in §2 sketched Docker→ECS/Fargate as the infra path. What actually shipped
+is Vercel serverless functions instead, which changes more than just where the code runs —
+it removes the option of a persistent process entirely. This section covers what that meant
+concretely; see `README.md`'s "Deploying to Vercel" for the operational setup steps.
+
+### 13a. No persistent worker
+
+The original design had `apps/worker` consuming a BullMQ queue for three things. None of
+them have a queue anymore:
+
+| Responsibility | Was | Now |
+|---|---|---|
+| Billing reconciliation | BullMQ repeatable job, worker process | Vercel Cron Job (`GET /billing/internal/reconcile`, every 5 min) |
+| Match-expiry (§10b's 15-min accept/decline window) | One BullMQ delayed job per request | `Booking.matchExpiresAt` timestamp + a Cron-invoked sweep (`GET /matching/internal/sweep-expired`, every 2 min) that reassigns/cancels anything past it |
+| Notification delivery | Queued to the worker, delivered async | Sent synchronously, inline, from the request that triggered it |
+
+The match-expiry change is the more interesting of the three: instead of scheduling a timer
+per booking (which needs something to hold the timer), each `REQUESTED` booking just carries
+its own deadline, and a periodic sweep catches whatever's overdue. This is arguably cleaner
+than the original delayed-job design even independent of the serverless constraint — no
+per-request infrastructure, just a query with a `WHERE matchExpiresAt < now()`.
+
+Notification delivery losing its queue is a real, if currently invisible, regression: a slow
+downstream email/SMS provider would now add latency to the request that triggered it,
+instead of being absorbed by a background worker. It's not felt yet because no real
+provider is wired up (`ConsoleNotifier` just logs) — worth revisiting with a real timeout/
+retry strategy (or a separate queueing service, e.g. Vercel Queues or a lightweight external
+queue) once one is.
+
+### 13b. Cron authentication
+
+Vercel Cron Jobs are plain scheduled GET requests to your own deployment; you can't attach
+custom headers to them. Vercel does automatically send `Authorization: Bearer $CRON_SECRET`
+if that env var is set on the project, so `InternalSecretGuard` checks that standard header
+rather than the custom `x-internal-secret` header the original worker-based design used.
+
+### 13c. Rate limiting needed a real store
+
+In-memory throttler storage (fine for a single long-running server) doesn't work on
+serverless — concurrent/cold-started instances don't share memory, so counters wouldn't
+agree with each other. The rate limiter is backed by Redis for this reason, not as an
+optional scaling upgrade.
+
+### 13d. Two databases, pooled connections
+
+The identity-vault separation from §3 still holds — two separate Postgres instances, not
+two databases in one. What's new is that both need a **pooled** connection string (Neon's
+`-pooler` hostname, PgBouncer underneath) rather than a direct one: serverless functions can
+run many concurrent instances, each opening its own DB connection, and Postgres's connection
+limit doesn't take long to exhaust without pooling in front of it.
+
+## 14. Open Decisions Worth Revisiting With You
+
+- Video provider: managed (Daily.co/Twilio/Agora) is effectively the only option now that infra is Vercel serverless — a self-hosted SFU (mediasoup) needs a persistent process, which isn't available. Worth confirming this constraint is acceptable before treating it as fully settled.
 - Whether any session content is ever persisted (even encrypted) for QA/compliance, or strictly metadata-only
 - Jurisdiction-specific compliance target (GDPR-style vs. HIPAA-adjacent vs. none formally, but "act like it" regardless)
 - Direct-booking vs. auto-match as the *default* for standard 1:1 sessions (recommended above, but worth confirming against your matching-quality expectations)

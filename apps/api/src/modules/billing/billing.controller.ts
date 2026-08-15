@@ -51,12 +51,13 @@ export class BillingController {
   }
 
   /**
-   * Triggered by apps/worker on a schedule, not by user traffic — sweeps payments stuck
-   * PENDING past the grace period. See ARCHITECTURE.md §11b.
+   * Cron-invoked (Vercel Cron — see vercel.json), not by user traffic — sweeps payments
+   * stuck PENDING past the grace period. See ARCHITECTURE.md §11b. GET because that's all
+   * Vercel Cron can invoke; see InternalSecretGuard for how it's authenticated.
    */
   @Public()
   @UseGuards(InternalSecretGuard)
-  @Post('internal/reconcile')
+  @Get('internal/reconcile')
   async reconcile() {
     const resolved = await this.billing.reconcilePending();
     return { resolved };

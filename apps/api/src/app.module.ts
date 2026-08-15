@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import { LoggerModule } from 'nestjs-pino';
 import { validateEnv } from './common/config/env.validation';
 import { pinoConfig } from './common/logger/pino.config';
@@ -33,10 +34,15 @@ import { AdminModule } from './modules/admin/admin.module';
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
     LoggerModule.forRoot(pinoConfig),
     // Global default: 100 req/min per IP. Auth routes set a tighter @Throttle() override —
-    // see modules/auth/auth.controller.ts. In-memory storage is fine for a single instance;
-    // move to a Redis ThrottlerStorage once the API runs as more than one replica.
-    ThrottlerModule.forRoot({
-      throttlers: [{ name: 'default', ttl: 60_000, limit: 100 }],
+    // see modules/auth/auth.controller.ts. Redis-backed storage is required, not optional,
+    // here: this runs as Vercel serverless functions, so in-memory counters wouldn't
+    // persist (or agree with each other) across invocations/instances.
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        throttlers: [{ name: 'default', ttl: 60_000, limit: 100 }],
+        storage: new ThrottlerStorageRedisService(config.getOrThrow<string>('REDIS_URL')),
+      }),
     }),
 
     // Cross-cutting (global)

@@ -63,6 +63,7 @@ export class BookingService {
     durationMin: number;
     channelType: 'CHAT' | 'VIDEO';
     specialty: string;
+    matchExpiresAt: Date;
   }) {
     return this.prisma.booking.create({
       data: {
@@ -73,6 +74,7 @@ export class BookingService {
         billingType: params.durationMin <= MINIMUM_BILLING_CUTOFF_MIN ? 'MINIMUM' : 'HOURLY',
         status: 'REQUESTED',
         specialty: params.specialty,
+        matchExpiresAt: params.matchExpiresAt,
         session: { create: { channelType: params.channelType } },
       },
       include: { session: true },
@@ -80,7 +82,12 @@ export class BookingService {
   }
 
   async confirm(bookingId: string): Promise<Booking> {
-    return this.setStatus(bookingId, 'CONFIRMED');
+    // matchExpiresAt is a no-op to clear on a direct booking (never set), and required to
+    // clear on a matched one (accepted — no longer subject to the auto-match sweep).
+    return this.prisma.booking.update({
+      where: { id: bookingId },
+      data: { status: 'CONFIRMED', matchExpiresAt: null },
+    });
   }
 
   async markCompleted(bookingId: string): Promise<Booking> {

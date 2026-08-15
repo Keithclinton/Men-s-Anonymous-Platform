@@ -131,7 +131,7 @@ export class BillingService {
   /**
    * Sweeps payments stuck PENDING past a grace period and asks the gateway directly.
    * Callbacks occasionally never arrive — see ARCHITECTURE.md §11b. Meant to be invoked
-   * on a schedule from apps/worker, not from request handlers.
+   * on a schedule (Vercel Cron — see vercel.json), not from request handlers.
    */
   async reconcilePending(olderThanMinutes = 5): Promise<number> {
     const cutoff = new Date(Date.now() - olderThanMinutes * 60_000);

@@ -21,10 +21,6 @@
     "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": true,
     "esModuleInterop": true,
-    "resolveJsonModule": true,
-    "paths": {
-      "@app/shared": ["libs/shared/src"],
-      "@app/shared/*": ["libs/shared/src/*"]
-    }
+    "resolveJsonModule": true
   }
 }

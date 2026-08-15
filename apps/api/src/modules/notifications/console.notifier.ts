@@ -2,9 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { NotificationPayload, Notifier } from './notifier.interface';
 
 /**
- * Logs instead of sending. Handy for local dev when you don't want to run apps/worker —
- * swap it in via NotificationsModule in place of QueueNotifier. Production should use
- * QueueNotifier (or a direct SendGrid/Twilio/FCM implementation), not this one.
+ * Logs instead of sending, called synchronously from NotificationsService — no queue or
+ * persistent worker (this API runs on Vercel serverless functions, which have neither).
+ * Swap for a real SendGrid/Twilio/FCM implementation behind the same Notifier interface
+ * once a provider's chosen; NotificationsService doesn't need to change either way.
  */
 @Injectable()
 export class ConsoleNotifier implements Notifier {

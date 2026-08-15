@@ -9,12 +9,19 @@ import { Booking } from '../../generated/prisma-core';
 import { BookingService } from '../booking/booking.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RequestMatchDto } from './dto/request-match.dto';
-import { MatchExpiryQueue } from './match-expiry.queue';
+
+/** Accept/decline window before a queued request reassigns. See ARCHITECTURE.md §10b. */
+const MATCH_EXPIRY_MS = 15 * 60_000;
 
 /**
  * Auto-match / request-queue path from ARCHITECTURE.md §10b: a client asks for "someone
  * with X specialty" instead of picking a person, the least-loaded matching provider gets
  * assigned, and has a 15-minute window to accept or decline before it reassigns.
+ *
+ * No persistent worker process (this runs on Vercel serverless functions) — instead of a
+ * delayed job per request, each REQUESTED booking carries its own `matchExpiresAt`, and
+ * `sweepExpired()` is invoked on a schedule (Vercel Cron) to catch anything past it. See
+ * modules/matching/matching.controller.ts for the cron-facing endpoint.
  *
  * Direct booking (client picks a published slot) doesn't go through here at all — see
  * modules/booking.
@@ -25,7 +32,6 @@ export class MatchingService {
     private readonly prisma: CorePrismaService,
     private readonly booking: BookingService,
     private readonly notifications: NotificationsService,
-    private readonly expiryQueue: MatchExpiryQueue,
   ) {}
 
   async requestMatch(clientId: string, dto: RequestMatchDto) {
@@ -46,9 +52,9 @@ export class MatchingService {
       durationMin: dto.durationMin,
       channelType: dto.channelType,
       specialty: dto.specialty,
+      matchExpiresAt: new Date(Date.now() + MATCH_EXPIRY_MS),
     });
 
-    await this.expiryQueue.schedule(booking.id);
     await this.notifications.notifyNewSessionRequest(providerId);
 
     return booking;
@@ -64,14 +70,19 @@ export class MatchingService {
     return this.reassignOrCancel(booking);
   }
 
-  /** Called by apps/worker's match-expiry job — a no-op if the request was already resolved. */
-  async expireIfStillRequested(bookingId: string): Promise<{ reassigned: boolean }> {
-    const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } });
-    if (!booking || booking.status !== 'REQUESTED') {
-      return { reassigned: false };
+  /**
+   * Cron-invoked (no per-booking timers without a persistent worker) — sweeps every
+   * REQUESTED booking whose accept/decline window has passed. Safe to call as often as
+   * you like; a booking not yet past its `matchExpiresAt` is left untouched.
+   */
+  async sweepExpired(): Promise<{ swept: number }> {
+    const expired = await this.prisma.booking.findMany({
+      where: { status: 'REQUESTED', matchExpiresAt: { lt: new Date() } },
+    });
+    for (const booking of expired) {
+      await this.reassignOrCancel(booking);
     }
-    await this.reassignOrCancel(booking);
-    return { reassigned: true };
+    return { swept: expired.length };
   }
 
   private async reassignOrCancel(booking: Booking): Promise<Booking> {
@@ -87,15 +98,18 @@ export class MatchingService {
     if (!next) {
       return this.prisma.booking.update({
         where: { id: booking.id },
-        data: { status: 'CANCELLED', declinedProviderIds: excluded },
+        data: { status: 'CANCELLED', declinedProviderIds: excluded, matchExpiresAt: null },
       });
     }
 
     const updated = await this.prisma.booking.update({
       where: { id: booking.id },
-      data: { providerId: next, declinedProviderIds: excluded },
+      data: {
+        providerId: next,
+        declinedProviderIds: excluded,
+        matchExpiresAt: new Date(Date.now() + MATCH_EXPIRY_MS),
+      },
     });
-    await this.expiryQueue.schedule(updated.id);
     await this.notifications.notifyNewSessionRequest(next);
     return updated;
   }

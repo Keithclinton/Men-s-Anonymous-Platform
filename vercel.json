@@ -1,0 +1,8 @@
+{
+  "buildCommand": "npm run vercel-build",
+  "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }],
+  "crons": [
+    { "path": "/billing/internal/reconcile", "schedule": "*/5 * * * *" },
+    { "path": "/matching/internal/sweep-expired", "schedule": "*/2 * * * *" }
+  ]
+}

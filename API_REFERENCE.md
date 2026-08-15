@@ -220,7 +220,7 @@ Body: `{ "phone": "254712345678" }` (digits, 9–15, optional leading `+`)
 
 ### Internal only (not for frontend use)
 - `POST /billing/mpesa/callback` — Safaricom calls this directly
-- `POST /billing/internal/reconcile` — triggered by apps/worker on a schedule, secret-guarded
+- `GET /billing/internal/reconcile` — Vercel Cron, every 5 min; requires `Authorization: Bearer <CRON_SECRET>`
 
 ---
 
@@ -246,7 +246,7 @@ Response: booking shape (see Booking), `status: "REQUESTED"`, `specialty` set. `
 Reassigns to the next least-loaded provider (stays `REQUESTED`, new `providerId`), or `CANCELLED` if nobody else is available.
 
 ### Internal only
-- `POST /matching/internal/expire` — fires the same reassignment logic when the 15-minute window elapses unanswered.
+- `GET /matching/internal/sweep-expired` — Vercel Cron, every 2 min; sweeps every `REQUESTED` booking past its 15-minute window and reassigns/cancels. Requires `Authorization: Bearer <CRON_SECRET>`.
 
 ---
 

@@ -2,13 +2,15 @@
 // See ARCHITECTURE.md §3 (Identity Vault Separation) and §5 (Data Model).
 
 generator client {
-  provider = "prisma-client-js"
-  output   = "../../apps/api/src/generated/prisma-core"
+  provider      = "prisma-client-js"
+  output        = "../../apps/api/src/generated/prisma-core"
+  // "native" for local dev; the rhel-openssl targets are Prisma's documented requirement
+  // for deploying to Vercel serverless functions (Amazon Linux under the hood) — see
+  // https://www.prisma.io/docs/orm/prisma-client/deployment/serverless/deploy-to-vercel.
+  // Including both openssl targets is a small size cost but avoids guessing which Amazon
+  // Linux version a given Vercel runtime update lands on.
+  binaryTargets = ["native", "rhel-openssl-1.0.x", "rhel-openssl-3.0.x"]
 }
-
-// apps/worker never touches either database directly — it triggers work (e.g. billing
-// reconciliation) over an internal HTTP call into apps/api, which owns all DB/gateway
-// access. See ARCHITECTURE.md §11b and apps/worker/src/processors/.
 
 datasource db {
   provider = "postgresql"
@@ -141,6 +143,10 @@ model Booking {
   /// Providers who declined (or timed out on) this request, so re-matching doesn't loop
   /// back to them. Only meaningful alongside `specialty`.
   declinedProviderIds  String[] @default([])
+  /// Auto-match accept/decline deadline (ARCHITECTURE.md §10b). Set on request/reassignment,
+  /// cleared on confirm/cancel. A scheduled sweep (no persistent worker on serverless — see
+  /// MatchingService.sweepExpired) reassigns/cancels anything still REQUESTED past this.
+  matchExpiresAt       DateTime?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -149,6 +155,7 @@ model Booking {
 
   @@index([clientId])
   @@index([providerId])
+  @@index([status, matchExpiresAt])
   @@map("bookings")
 }
 
