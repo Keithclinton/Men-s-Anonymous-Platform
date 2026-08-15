@@ -1,10 +1,20 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CorePrismaService } from '../../common/prisma/core-prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { CreateRevealGrantDto } from './dto/create-reveal-grant.dto';
 
-/** Pseudonymous profile records only — role, status, preferences. See ARCHITECTURE.md §4. */
+/** Pseudonymous profile records + scoped reveal grants. See ARCHITECTURE.md §4 / product-rules §2. */
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: CorePrismaService) {}
+  constructor(
+    private readonly prisma: CorePrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   async getById(userId: string) {
     const user = await this.prisma.user.findUnique({
@@ -23,5 +33,119 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
     return user;
+  }
+
+  async listMyReveals(clientId: string) {
+    return this.prisma.identityRevealGrant.findMany({
+      where: { clientId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async listRevealsForProvider(providerId: string) {
+    return this.prisma.identityRevealGrant.findMany({
+      where: { providerId, active: true },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        clientId: true,
+        providerId: true,
+        bookingId: true,
+        level: true,
+        firstName: true,
+        fullName: true,
+        photoUrl: true,
+        active: true,
+        createdAt: true,
+        revokedAt: true,
+      },
+    });
+  }
+
+  async createReveal(clientId: string, dto: CreateRevealGrantDto) {
+    const provider = await this.prisma.user.findUnique({ where: { id: dto.providerId } });
+    if (!provider || provider.role !== 'PROVIDER') {
+      throw new NotFoundException('Provider not found');
+    }
+
+    if (dto.bookingId) {
+      const booking = await this.prisma.booking.findUnique({ where: { id: dto.bookingId } });
+      if (!booking) throw new NotFoundException('Booking not found');
+      if (booking.clientId !== clientId) {
+        throw new ForbiddenException('Not your booking');
+      }
+      if (booking.providerId !== dto.providerId) {
+        throw new BadRequestException('providerId must match the booking’s provider');
+      }
+    }
+
+    this.assertProjection(dto);
+
+    // Revoke any prior active grant for the same client+provider(+booking) scope first —
+    // product rule: higher levels replace; revoke is for future sessions.
+    await this.prisma.identityRevealGrant.updateMany({
+      where: {
+        clientId,
+        providerId: dto.providerId,
+        bookingId: dto.bookingId ?? null,
+        active: true,
+      },
+      data: { active: false, revokedAt: new Date() },
+    });
+
+    const grant = await this.prisma.identityRevealGrant.create({
+      data: {
+        clientId,
+        providerId: dto.providerId,
+        bookingId: dto.bookingId,
+        level: dto.level,
+        firstName: dto.firstName,
+        fullName: dto.fullName,
+        photoUrl: dto.photoUrl,
+      },
+    });
+
+    await this.audit.record({
+      actorPseudonym: clientId,
+      action: 'REVEAL_GRANT',
+      target: dto.providerId,
+      metadata: { grantId: grant.id, level: dto.level, bookingId: dto.bookingId ?? null },
+    });
+
+    return grant;
+  }
+
+  async revokeReveal(clientId: string, grantId: string) {
+    const grant = await this.prisma.identityRevealGrant.findUnique({ where: { id: grantId } });
+    if (!grant) throw new NotFoundException('Reveal grant not found');
+    if (grant.clientId !== clientId) throw new ForbiddenException('Not your reveal grant');
+    if (!grant.active) return grant;
+
+    const updated = await this.prisma.identityRevealGrant.update({
+      where: { id: grantId },
+      data: { active: false, revokedAt: new Date(), level: 'ANONYMOUS' },
+    });
+
+    await this.audit.record({
+      actorPseudonym: clientId,
+      action: 'REVEAL_REVOKE',
+      target: grant.providerId,
+      metadata: { grantId, bookingId: grant.bookingId },
+    });
+
+    return updated;
+  }
+
+  private assertProjection(dto: CreateRevealGrantDto) {
+    if (dto.level === 'ANONYMOUS') return;
+    if ((dto.level === 'FIRST_NAME' || dto.level === 'FULL_NAME' || dto.level === 'NAME_PHOTO') && !dto.firstName) {
+      throw new BadRequestException('firstName is required for this reveal level');
+    }
+    if ((dto.level === 'FULL_NAME' || dto.level === 'NAME_PHOTO') && !dto.fullName) {
+      throw new BadRequestException('fullName is required for this reveal level');
+    }
+    if (dto.level === 'NAME_PHOTO' && !dto.photoUrl) {
+      throw new BadRequestException('photoUrl is required for NAME_PHOTO');
+    }
   }
 }

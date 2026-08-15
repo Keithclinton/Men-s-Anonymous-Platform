@@ -93,6 +93,17 @@ Your own profile.
 }
 ```
 
+### Progressive reveal (client-controlled)
+
+Scoped grants — counselors only see what an **active** grant projects. Revoke is future-only. Names/photo on the grant are a client-supplied projection (vault PII stays vaulted).
+
+| Endpoint | Role | Notes |
+|---|---|---|
+| `GET /users/me/reveals` | `CLIENT` | Your grants |
+| `POST /users/me/reveals` | `CLIENT` | Body: `{ providerId, bookingId?, level, firstName?, fullName?, photoUrl? }` · `level`: `ANONYMOUS` \| `FIRST_NAME` \| `FULL_NAME` \| `NAME_PHOTO` |
+| `POST /users/me/reveals/:id/revoke` | `CLIENT` | Deactivates for future sessions |
+| `GET /providers/me/reveals` | `PROVIDER` | Active grants aimed at you |
+
 ---
 
 ## Providers
