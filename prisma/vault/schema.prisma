@@ -1,0 +1,84 @@
+// Identity vault database: the ONLY place real PII lives. Isolated network/instance in
+// production. Every field that could identify someone is encrypted at the application
+// layer (see common/encryption) before it lands in these columns. See ARCHITECTURE.md §3.
+
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../../apps/api/src/generated/prisma-vault"
+  binaryTargets = ["native", "rhel-openssl-1.0.x", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("VAULT_DATABASE_URL")
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum ProviderVerificationDecision {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Keyed by the same UUID as app-core `User.id` (the pseudonym_id) — that id is the ONLY
+/// thing the two databases have in common. There is no foreign key across databases;
+/// the link is enforced in application code via IdentityVaultService.
+model IdentityRecord {
+  pseudonymId         String             @id
+  encryptedName        String?
+  encryptedEmail       String?
+  encryptedPhone       String?
+  /// M-Pesa customer reference / Pesapal account ref, encrypted.
+  encryptedPaymentRef  String?
+  /// HMAC-SHA256 of the lowercased email/phone — AES-GCM ciphertext can't be looked up by
+  /// value (fresh IV every time), so account-recovery-by-email needs a separate
+  /// deterministic index. Never reversible back to the plaintext on its own.
+  emailHash            String?            @unique
+  phoneHash             String?            @unique
+  verificationStatus   VerificationStatus @default(PENDING)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@map("identity_records")
+}
+
+/// Adjacent to the vault, not part of it structurally, but same access rules: encrypted,
+/// admin/compliance-only, audit-logged. See ARCHITECTURE.md §10a.
+model ProviderVerification {
+  id                      String                       @id @default(uuid())
+  pseudonymId             String
+  encryptedLicenseNumber  String
+  documentRefs            Json
+  verifyingBody           String?
+  expiryDate              DateTime?
+  reviewerPseudonym       String?
+  decision                ProviderVerificationDecision @default(PENDING)
+  decisionAt              DateTime?
+  createdAt               DateTime                     @default(now())
+  updatedAt               DateTime                     @updatedAt
+
+  @@index([pseudonymId])
+  @@map("provider_verifications")
+}
+
+/// Self-contained audit trail for the vault, so access history survives even if the
+/// app-core audit log is unavailable. Every read/write through IdentityVaultService
+/// writes here — no exceptions.
+model VaultAuditLog {
+  id               String   @id @default(uuid())
+  actorPseudonym   String
+  action           String
+  targetPseudonym  String
+  reason           String?
+  timestamp        DateTime @default(now())
+
+  @@index([actorPseudonym])
+  @@index([targetPseudonym])
+  @@index([timestamp])
+  @@map("vault_audit_logs")
+}

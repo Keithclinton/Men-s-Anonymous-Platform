@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main, backend]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - run: npm ci
+
+      # Prisma client generation needs syntactically-valid datasource URLs but not a
+      # reachable database — the placeholders in .env.example are enough for this.
+      - name: Set up placeholder env for Prisma generate
+        run: cp .env.example .env
+
+      - run: npm run prisma:generate
+
+      - run: npm run build
+
+      - run: npm run lint
