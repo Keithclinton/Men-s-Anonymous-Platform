@@ -13,6 +13,7 @@ import { ProviderDeskPage } from './pages/ProviderDeskPage';
 import { ProviderDetailPage } from './pages/ProviderDetailPage';
 import { ProvidersPage } from './pages/ProvidersPage';
 import { RegisterPage } from './pages/RegisterPage';
+import { SubscriptionsPage } from './pages/SubscriptionsPage';
 import { WelcomePage } from './pages/WelcomePage';
 
 export default function App() {
@@ -113,6 +114,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <LibraryPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/plans"
+            element={
+              <ProtectedRoute>
+                <SubscriptionsPage />
               </ProtectedRoute>
             }
           />

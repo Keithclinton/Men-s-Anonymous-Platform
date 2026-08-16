@@ -14,6 +14,7 @@ export interface AuthContextValue {
     persist?: boolean;
   }) => Promise<void>;
   signOut: () => void;
+  refreshMe: () => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);

@@ -3,6 +3,7 @@ import type { Booking, SessionChannelType } from './types';
 
 export function requestMatch(body: {
   specialty: string;
+  kind?: 'COUNSELOR' | 'MODERATOR';
   scheduledStart: string;
   durationMin: number;
   channelType: SessionChannelType;

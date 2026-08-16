@@ -19,7 +19,7 @@ export function Segmented<T extends string>({
       <div
         className={cn(
           'grid gap-1 rounded-[1.25rem] border border-line/90 bg-ink/35 p-1',
-          options.length > 2 ? 'grid-cols-2' : 'grid-cols-2',
+          options.length === 3 ? 'grid-cols-3' : 'grid-cols-2',
         )}
       >
         {options.map((option) => {

@@ -2,24 +2,21 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { createBooking } from '../api/bookings';
 import { ApiError } from '../api/errors';
-import { getProvider } from '../api/providers';
-import type { ProviderProfile, SessionChannelType } from '../api/types';
+import { getProvider, listProviderSlots } from '../api/providers';
+import type { AvailabilitySlot, ProviderProfile, SessionChannelType } from '../api/types';
 import { useAuth } from '../auth/useAuth';
 import { AppShell } from '../components/layout/AppShell';
 import { Panel } from '../components/layout/Panel';
 import { Button } from '../components/ui/Button';
-import { Field, FieldGroup } from '../components/ui/Field';
 import { Notice } from '../components/ui/Notice';
 import { Segmented } from '../components/ui/Segmented';
 import {
   channelLabel,
-  defaultScheduleInput,
   estimateAmount,
   formatKes,
-  localInputToIso,
+  formatWhen,
+  providerKindLabel,
 } from '../lib/format';
-
-const DURATIONS = [30, 45, 60, 90] as const;
 
 export function BookPage() {
   const { id = '' } = useParams();
@@ -27,9 +24,9 @@ export function BookPage() {
   const { user } = useAuth();
 
   const [provider, setProvider] = useState<ProviderProfile | null>(null);
+  const [slots, setSlots] = useState<AvailabilitySlot[]>([]);
+  const [slotId, setSlotId] = useState<string | null>(null);
   const [channel, setChannel] = useState<SessionChannelType>('CHAT');
-  const [durationMin, setDurationMin] = useState<(typeof DURATIONS)[number]>(30);
-  const [when, setWhen] = useState(defaultScheduleInput);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -37,9 +34,12 @@ export function BookPage() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    void getProvider(id)
-      .then((row) => {
-        if (!cancelled) setProvider(row);
+    void Promise.all([getProvider(id), listProviderSlots(id)])
+      .then(([row, openSlots]) => {
+        if (cancelled) return;
+        setProvider(row);
+        setSlots(openSlots);
+        setSlotId(openSlots[0]?.id ?? null);
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof ApiError ? err.message : 'Couldn’t load provider.');
@@ -52,28 +52,26 @@ export function BookPage() {
     };
   }, [id]);
 
+  const selected = useMemo(
+    () => slots.find((slot) => slot.id === slotId) ?? null,
+    [slots, slotId],
+  );
+
   const estimate = useMemo(
-    () => estimateAmount(durationMin, provider?.rateCard),
-    [durationMin, provider?.rateCard],
+    () => (selected ? estimateAmount(selected.durationMin, provider?.rateCard) : null),
+    [selected, provider?.rateCard],
   );
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!provider || user?.role !== 'CLIENT') return;
-
-    const start = new Date(when);
-    if (Number.isNaN(start.getTime()) || start.getTime() <= Date.now()) {
-      setError('Pick a time in the future.');
-      return;
-    }
+    if (!provider || user?.role !== 'CLIENT' || !selected) return;
 
     setError(null);
     setSubmitting(true);
     try {
       const booking = await createBooking({
         providerId: provider.userId,
-        scheduledStart: localInputToIso(when),
-        durationMin,
+        slotId: selected.id,
         channelType: channel,
       });
       navigate(`/bookings/${booking.id}`, { replace: true });
@@ -99,10 +97,13 @@ export function BookPage() {
       {provider ? (
         <form onSubmit={onSubmit} className="flex flex-col gap-3" noValidate>
           <Panel className="p-4">
-            <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-sage">With</p>
+            <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-sage">
+              {providerKindLabel(provider.kind)}
+            </p>
             <p className="mt-1 font-display text-xl text-cream">{provider.displayName}</p>
             <p className="mt-1 text-[13px] text-mist">
-              {channelLabel(channel)} · {durationMin} min
+              {channelLabel(channel)}
+              {selected ? ` · ${selected.durationMin} min` : ''}
               {estimate != null ? ` · about ${formatKes(estimate)}` : ''}
             </p>
           </Panel>
@@ -128,42 +129,35 @@ export function BookPage() {
 
             <fieldset>
               <legend className="mb-2 text-[11px] font-medium uppercase tracking-[0.16em] text-mist">
-                Length
+                Open slots
               </legend>
-              <div className="grid grid-cols-4 gap-1.5">
-                {DURATIONS.map((mins) => (
-                  <button
-                    key={mins}
-                    type="button"
-                    onClick={() => setDurationMin(mins)}
-                    className={
-                      durationMin === mins
-                        ? 'min-h-11 rounded-full border border-brass/60 bg-surface-2 text-[13px] text-cream'
-                        : 'min-h-11 rounded-full border border-line text-[13px] text-mist hover:text-cream'
-                    }
-                  >
-                    {mins}m
-                  </button>
-                ))}
-              </div>
-              <p className="mt-2 text-[12px] text-mist">
-                ≤30 min bills the minimum rate; longer uses the hourly rate.
-              </p>
+              {slots.length === 0 ? (
+                <p className="text-[13px] leading-5 text-mist">
+                  This provider hasn’t published open slots yet. Try auto-match, or check back later.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  {slots.map((slot) => (
+                    <button
+                      key={slot.id}
+                      type="button"
+                      onClick={() => setSlotId(slot.id)}
+                      className={
+                        slotId === slot.id
+                          ? 'rounded-xl border border-brass/60 bg-surface-2 px-3.5 py-3 text-left text-[13px] text-cream'
+                          : 'rounded-xl border border-line px-3.5 py-3 text-left text-[13px] text-mist hover:text-cream'
+                      }
+                    >
+                      <span className="block text-cream">{formatWhen(slot.start)}</span>
+                      <span className="mt-0.5 block text-[12px] text-mist">{slot.durationMin} min</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </fieldset>
-
-            <FieldGroup>
-              <Field
-                label="When"
-                type="datetime-local"
-                name="scheduledStart"
-                value={when}
-                onChange={(e) => setWhen(e.target.value)}
-                required
-              />
-            </FieldGroup>
           </Panel>
 
-          <Button type="submit" loading={submitting}>
+          <Button type="submit" loading={submitting} disabled={!selected}>
             Confirm booking
           </Button>
         </form>

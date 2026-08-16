@@ -55,6 +55,15 @@ export function LibraryPage() {
 
   return (
     <AppShell title="More">
+      <Panel className="mb-4 p-4">
+        <p className="text-[13px] text-mist">Monthly session packs (Phase 2)</p>
+        <Link
+          to="/plans"
+          className="mt-2 inline-flex text-[14px] text-cream underline decoration-line underline-offset-4"
+        >
+          View plans
+        </Link>
+      </Panel>
       <div className="mb-4 flex gap-2">
         <button
           type="button"

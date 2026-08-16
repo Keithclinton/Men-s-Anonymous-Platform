@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ApiError } from '../api/errors';
 import { requestMatch } from '../api/matching';
-import type { SessionChannelType } from '../api/types';
+import type { ProviderKind, SessionChannelType } from '../api/types';
 import { useAuth } from '../auth/useAuth';
 import { AppShell } from '../components/layout/AppShell';
 import { Panel } from '../components/layout/Panel';
@@ -18,6 +18,7 @@ export function MatchPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [specialty, setSpecialty] = useState('career');
+  const [kind, setKind] = useState<'ANY' | ProviderKind>('ANY');
   const [channel, setChannel] = useState<SessionChannelType>('CHAT');
   const [durationMin, setDurationMin] = useState<(typeof DURATIONS)[number]>(30);
   const [when, setWhen] = useState(defaultScheduleInput);
@@ -39,6 +40,7 @@ export function MatchPage() {
     try {
       const booking = await requestMatch({
         specialty: specialty.trim(),
+        kind: kind === 'ANY' ? undefined : kind,
         scheduledStart: localInputToIso(when),
         durationMin,
         channelType: channel,
@@ -54,7 +56,7 @@ export function MatchPage() {
   return (
     <AppShell backTo="/providers" backLabel="Find" title="Get matched">
       <p className="mb-4 max-w-[40ch] text-[14px] leading-6 text-mist">
-        Don’t pick a person — tell us the specialty. We assign the least-loaded provider; they have 15
+        Don’t pick a person — tell us specialty and kind. We assign the least-loaded match; they have 15
         minutes to accept.
       </p>
 
@@ -79,6 +81,17 @@ export function MatchPage() {
               required
             />
           </FieldGroup>
+
+          <Segmented
+            legend="Kind"
+            value={kind}
+            onChange={setKind}
+            options={[
+              { value: 'ANY', label: 'Either', hint: 'Any kind' },
+              { value: 'COUNSELOR', label: 'Counselor', hint: 'Licensed path' },
+              { value: 'MODERATOR', label: 'Moderator', hint: 'Peer support' },
+            ]}
+          />
 
           <Segmented
             legend="How"

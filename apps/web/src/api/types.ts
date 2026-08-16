@@ -1,4 +1,10 @@
 export type UserRole = 'CLIENT' | 'PROVIDER' | 'ADMIN';
+export type StaffRole =
+  | 'SUPPORT_AGENT'
+  | 'STAFF_MODERATOR'
+  | 'COMPLIANCE_OFFICER'
+  | 'SUPER_ADMIN';
+export type ProviderKind = 'COUNSELOR' | 'MODERATOR';
 export type UserStatus = 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'BANNED' | 'DELETED';
 export type SessionChannelType = 'CHAT' | 'VIDEO';
 export type BookingStatus = 'REQUESTED' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED';
@@ -34,6 +40,7 @@ export interface MeResponse {
   id: string;
   username: string;
   role: UserRole;
+  staffRole?: StaffRole | null;
   status: UserStatus;
   createdAt: string;
   providerProfile: ProviderProfile | null;
@@ -49,11 +56,21 @@ export interface ProviderProfile {
   userId: string;
   displayName: string;
   bio: string | null;
+  kind: ProviderKind;
   specialties: string[];
   rateCard: RateCard | null;
   availability: Record<string, unknown> | null;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface AvailabilitySlot {
+  id: string;
+  providerId: string;
+  start: string;
+  durationMin: number;
+  bookingId: string | null;
+  createdAt?: string;
 }
 
 export interface Feedback {
@@ -91,8 +108,9 @@ export interface Booking {
 
 export interface CreateBookingRequest {
   providerId: string;
-  scheduledStart: string;
-  durationMin: number;
+  slotId?: string;
+  scheduledStart?: string;
+  durationMin?: number;
   channelType: SessionChannelType;
 }
 
@@ -105,6 +123,46 @@ export interface PaymentStatusResponse {
 export interface PayResponse {
   externalRef: string;
   status: PaymentStatus;
+}
+
+export interface ProviderEarnings {
+  currency: string;
+  grossSucceeded: number;
+  paidOut: number;
+  pendingPayout: number;
+  available: number;
+  recentCharges: Array<{
+    amount: number | string;
+    createdAt: string;
+    bookingId: string | null;
+    externalRef: string;
+  }>;
+  recentPayouts: Array<{
+    amount: number | string;
+    createdAt: string;
+    status: PaymentStatus;
+    externalRef: string;
+  }>;
+}
+
+export interface SubscriptionPlan {
+  plan: 'starter' | 'standard';
+  label: string;
+  sessionsIncluded: number;
+  amountKes: number;
+  billing: string;
+  phase: number;
+  note: string;
+}
+
+export interface Subscription {
+  id: string;
+  userId: string;
+  plan: string;
+  sessionsIncluded: number;
+  renewalDate: string;
+  status: string;
+  createdAt: string;
 }
 
 export interface RevealGrant {

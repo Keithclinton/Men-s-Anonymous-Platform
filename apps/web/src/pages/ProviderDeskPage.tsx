@@ -1,38 +1,56 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ApiError } from '../api/errors';
-import { listProviderFeedback } from '../api/feedback';
+import { getProviderEarnings, requestPayout } from '../api/billing';
 import { listMyBookings } from '../api/bookings';
+import { listProviderFeedback } from '../api/feedback';
 import { acceptMatch, declineMatch } from '../api/matching';
 import {
+  createSlot,
+  deleteSlot,
+  listMySlots,
   publishProfile,
   submitVerification,
   updateAvailability,
 } from '../api/providers';
 import { listProviderReveals } from '../api/reveals';
-import type { Booking, Feedback, ProviderProfile, RevealGrant } from '../api/types';
+import type {
+  AvailabilitySlot,
+  Booking,
+  Feedback,
+  ProviderEarnings,
+  ProviderKind,
+  ProviderProfile,
+  RevealGrant,
+} from '../api/types';
 import { useAuth } from '../auth/useAuth';
 import { AppShell } from '../components/layout/AppShell';
 import { Panel } from '../components/layout/Panel';
 import { Button } from '../components/ui/Button';
 import { Field, FieldGroup } from '../components/ui/Field';
 import { Notice } from '../components/ui/Notice';
+import { Segmented } from '../components/ui/Segmented';
 import {
   bookingStatusLabel,
   channelLabel,
+  defaultScheduleInput,
+  formatKes,
   formatWhen,
+  localInputToIso,
   revealLevelLabel,
 } from '../lib/format';
 
+type DeskTab = 'requests' | 'calendar' | 'earnings' | 'profile' | 'verify' | 'reveals' | 'feedback';
+
 export function ProviderDeskPage() {
-  const { user } = useAuth();
+  const { user, refreshMe } = useAuth();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<'requests' | 'profile' | 'verify' | 'reveals' | 'feedback'>(
-    'requests',
-  );
+  const [tab, setTab] = useState<DeskTab>('requests');
   const [requests, setRequests] = useState<Booking[]>([]);
   const [feedback, setFeedback] = useState<Feedback[]>([]);
   const [reveals, setReveals] = useState<RevealGrant[]>([]);
+  const [slots, setSlots] = useState<AvailabilitySlot[]>([]);
+  const [earnings, setEarnings] = useState<ProviderEarnings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -41,14 +59,18 @@ export function ProviderDeskPage() {
   const profile = user?.providerProfile ?? null;
 
   async function refresh() {
-    const [bookings, fb, rev] = await Promise.all([
+    const [bookings, fb, rev, openSlots, earn] = await Promise.all([
       listMyBookings(),
       listProviderFeedback().catch(() => [] as Feedback[]),
       listProviderReveals().catch(() => [] as RevealGrant[]),
+      listMySlots().catch(() => [] as AvailabilitySlot[]),
+      getProviderEarnings().catch(() => null),
     ]);
     setRequests(bookings.filter((b) => b.status === 'REQUESTED' && b.providerId === user?.id));
     setFeedback(fb);
     setReveals(rev);
+    setSlots(openSlots);
+    setEarnings(earn);
   }
 
   useEffect(() => {
@@ -82,6 +104,8 @@ export function ProviderDeskPage() {
         {(
           [
             ['requests', 'Requests'],
+            ['calendar', 'Calendar'],
+            ['earnings', 'Earnings'],
             ['profile', 'Profile'],
             ['verify', 'Verify'],
             ['reveals', 'Reveals'],
@@ -120,24 +144,28 @@ export function ProviderDeskPage() {
           ) : (
             requests.map((booking) => (
               <Panel key={booking.id} className="p-4">
-                <p className="text-[14px] text-cream">{formatWhen(booking.scheduledStart)}</p>
-                <p className="mt-1 text-[12px] text-mist">
-                  {booking.specialty ?? 'General'} ·{' '}
-                  {booking.session ? channelLabel(booking.session.channelType) : '—'} ·{' '}
-                  {booking.durationMin} min · {bookingStatusLabel(booking.status)}
+                <p className="text-[11px] uppercase tracking-[0.12em] text-sage">
+                  {bookingStatusLabel(booking.status)}
                 </p>
-                <div className="mt-3 grid grid-cols-2 gap-2">
+                <p className="mt-1 text-[15px] text-cream">
+                  {formatWhen(booking.scheduledStart)} · {booking.durationMin}m ·{' '}
+                  {booking.session ? channelLabel(booking.session.channelType) : '—'}
+                </p>
+                <p className="mt-1 text-[13px] text-mist">Specialty: {booking.specialty ?? '—'}</p>
+                <div className="mt-3 flex gap-2">
                   <Button
                     loading={acting}
-                    onClick={() => {
+                    onClick={async () => {
                       setActing(true);
-                      void acceptMatch(booking.id)
-                        .then(() => refresh())
-                        .then(() => navigate(`/bookings/${booking.id}`))
-                        .catch((err) =>
-                          setError(err instanceof ApiError ? err.message : 'Accept failed.'),
-                        )
-                        .finally(() => setActing(false));
+                      try {
+                        await acceptMatch(booking.id);
+                        setNotice('Request accepted.');
+                        await refresh();
+                      } catch (err) {
+                        setError(err instanceof ApiError ? err.message : 'Accept failed.');
+                      } finally {
+                        setActing(false);
+                      }
                     }}
                   >
                     Accept
@@ -145,17 +173,23 @@ export function ProviderDeskPage() {
                   <Button
                     variant="secondary"
                     loading={acting}
-                    onClick={() => {
+                    onClick={async () => {
                       setActing(true);
-                      void declineMatch(booking.id)
-                        .then(() => refresh())
-                        .catch((err) =>
-                          setError(err instanceof ApiError ? err.message : 'Decline failed.'),
-                        )
-                        .finally(() => setActing(false));
+                      try {
+                        await declineMatch(booking.id);
+                        setNotice('Declined — may reassign.');
+                        await refresh();
+                      } catch (err) {
+                        setError(err instanceof ApiError ? err.message : 'Decline failed.');
+                      } finally {
+                        setActing(false);
+                      }
                     }}
                   >
                     Decline
+                  </Button>
+                  <Button variant="ghost" onClick={() => navigate(`/bookings/${booking.id}`)}>
+                    Open
                   </Button>
                 </div>
               </Panel>
@@ -164,38 +198,59 @@ export function ProviderDeskPage() {
         </div>
       ) : null}
 
-      {tab === 'profile' ? (
-        <ProfileForm
-          existing={profile}
-          onSaved={() => {
-            setNotice('Profile saved. Refresh the app if your home card looks stale.');
-            window.location.reload();
+      {tab === 'calendar' && !loading ? (
+        <SlotsPanel
+          slots={slots}
+          onChanged={async () => {
+            setNotice('Calendar updated.');
+            await refresh();
           }}
           onError={setError}
         />
       ) : null}
 
-      {tab === 'verify' ? (
+      {tab === 'earnings' && !loading ? (
+        <EarningsPanel
+          earnings={earnings}
+          onDone={async (msg) => {
+            setNotice(msg);
+            await refresh();
+          }}
+          onError={setError}
+        />
+      ) : null}
+
+      {tab === 'profile' && !loading ? (
+        <ProfileForm
+          existing={profile}
+          onSaved={async () => {
+            setNotice('Profile published.');
+            await refreshMe();
+            await refresh();
+          }}
+          onError={setError}
+        />
+      ) : null}
+
+      {tab === 'verify' && !loading ? (
         <VerifyForm
           onDone={(id) => setNotice(`Verification submitted (${id}). Wait for admin approval.`)}
           onError={setError}
         />
       ) : null}
 
-      {tab === 'reveals' ? (
+      {tab === 'reveals' && !loading ? (
         <div className="flex flex-col gap-3">
           {reveals.length === 0 ? (
             <Panel className="p-5">
-              <p className="text-[14px] text-mist">No active client reveals yet.</p>
+              <p className="text-[14px] text-mist">No active identity reveals aimed at you.</p>
             </Panel>
           ) : (
-            reveals.map((g) => (
-              <Panel key={g.id} className="p-4">
-                <p className="text-[14px] text-cream">{revealLevelLabel(g.level)}</p>
+            reveals.map((grant) => (
+              <Panel key={grant.id} className="p-4">
+                <p className="text-[13px] text-cream">{revealLevelLabel(grant.level)}</p>
                 <p className="mt-1 text-[12px] text-mist">
-                  Client {g.clientId.slice(0, 8)}…
-                  {g.firstName ? ` · ${g.firstName}` : ''}
-                  {g.fullName ? ` · ${g.fullName}` : ''}
+                  {[grant.firstName, grant.fullName].filter(Boolean).join(' · ') || 'Details on grant'}
                 </p>
               </Panel>
             ))
@@ -203,23 +258,186 @@ export function ProviderDeskPage() {
         </div>
       ) : null}
 
-      {tab === 'feedback' ? (
+      {tab === 'feedback' && !loading ? (
         <div className="flex flex-col gap-3">
           {feedback.length === 0 ? (
             <Panel className="p-5">
               <p className="text-[14px] text-mist">No feedback yet.</p>
             </Panel>
           ) : (
-            feedback.map((f) => (
-              <Panel key={f.id} className="p-4">
-                <p className="text-[14px] text-cream">{f.rating}/5</p>
-                {f.comment ? <p className="mt-1 text-[13px] text-mist">{f.comment}</p> : null}
+            feedback.map((item) => (
+              <Panel key={item.id} className="p-4">
+                <p className="text-[15px] text-cream">{'★'.repeat(item.rating)}</p>
+                {item.comment ? <p className="mt-1 text-[13px] text-mist">{item.comment}</p> : null}
               </Panel>
             ))
           )}
         </div>
       ) : null}
     </AppShell>
+  );
+}
+
+function SlotsPanel({
+  slots,
+  onChanged,
+  onError,
+}: {
+  slots: AvailabilitySlot[];
+  onChanged: () => Promise<void>;
+  onError: (msg: string) => void;
+}) {
+  const [start, setStart] = useState(defaultScheduleInput);
+  const [durationMin, setDurationMin] = useState(30);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function onCreate(event: FormEvent) {
+    event.preventDefault();
+    setSubmitting(true);
+    try {
+      await createSlot({ start: localInputToIso(start), durationMin });
+      await onChanged();
+    } catch (err) {
+      onError(err instanceof ApiError ? err.message : 'Couldn’t create slot.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <Panel className="p-5">
+        <p className="text-[13px] leading-5 text-mist">
+          Publish open slots clients can book directly. Free-form notes stay on the profile tab.
+        </p>
+        <form onSubmit={onCreate} className="mt-4 flex flex-col gap-3">
+          <FieldGroup>
+            <Field
+              label="Start"
+              type="datetime-local"
+              name="start"
+              value={start}
+              onChange={(e) => setStart(e.target.value)}
+              required
+            />
+            <Field
+              label="Duration (min)"
+              type="number"
+              name="durationMin"
+              value={String(durationMin)}
+              onChange={(e) => setDurationMin(Number(e.target.value) || 30)}
+              required
+            />
+          </FieldGroup>
+          <Button type="submit" loading={submitting}>
+            Add slot
+          </Button>
+        </form>
+      </Panel>
+      {slots.length === 0 ? (
+        <Panel className="p-5">
+          <p className="text-[14px] text-mist">No slots yet.</p>
+        </Panel>
+      ) : (
+        slots.map((slot) => (
+          <Panel key={slot.id} className="flex items-center justify-between gap-3 p-4">
+            <div>
+              <p className="text-[14px] text-cream">{formatWhen(slot.start)}</p>
+              <p className="text-[12px] text-mist">
+                {slot.durationMin} min
+                {slot.bookingId ? ' · booked' : ' · open'}
+              </p>
+            </div>
+            {!slot.bookingId ? (
+              <Button
+                variant="ghost"
+                onClick={async () => {
+                  try {
+                    await deleteSlot(slot.id);
+                    await onChanged();
+                  } catch (err) {
+                    onError(err instanceof ApiError ? err.message : 'Delete failed.');
+                  }
+                }}
+              >
+                Remove
+              </Button>
+            ) : null}
+          </Panel>
+        ))
+      )}
+    </div>
+  );
+}
+
+function EarningsPanel({
+  earnings,
+  onDone,
+  onError,
+}: {
+  earnings: ProviderEarnings | null;
+  onDone: (msg: string) => Promise<void>;
+  onError: (msg: string) => void;
+}) {
+  const [phone, setPhone] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  async function onPayout(event: FormEvent) {
+    event.preventDefault();
+    setSubmitting(true);
+    try {
+      await requestPayout({ phone: phone.trim() });
+      await onDone('Payout requested — check M-Pesa once Daraja B2C is approved.');
+    } catch (err) {
+      onError(err instanceof ApiError ? err.message : 'Payout failed.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (!earnings) {
+    return (
+      <Panel className="p-5">
+        <p className="text-[14px] text-mist">Couldn’t load earnings.</p>
+      </Panel>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <Panel className="p-5">
+        <p className="text-[11px] uppercase tracking-[0.14em] text-brass">Available</p>
+        <p className="mt-2 font-display text-3xl text-cream">{formatKes(earnings.available)}</p>
+        <dl className="mt-4 grid grid-cols-2 gap-3 text-[13px]">
+          <div>
+            <dt className="text-mist">Gross paid</dt>
+            <dd className="mt-1 text-cream">{formatKes(earnings.grossSucceeded)}</dd>
+          </div>
+          <div>
+            <dt className="text-mist">Paid out</dt>
+            <dd className="mt-1 text-cream">{formatKes(earnings.paidOut)}</dd>
+          </div>
+        </dl>
+      </Panel>
+      <Panel className="p-5">
+        <p className="text-[13px] leading-5 text-mist">
+          M-Pesa B2C payout. Needs Daraja B2C credentials on the API.
+        </p>
+        <form onSubmit={onPayout} className="mt-4 flex flex-col gap-3">
+          <Field
+            label="M-Pesa phone"
+            name="phone"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="+2547…"
+            required
+          />
+          <Button type="submit" loading={submitting} disabled={earnings.available <= 0}>
+            Request full payout
+          </Button>
+        </form>
+      </Panel>
+    </div>
   );
 }
 
@@ -238,11 +456,11 @@ function VerifyForm({
     event.preventDefault();
     setSubmitting(true);
     try {
-      const res = await submitVerification({
+      const result = await submitVerification({
         licenseNumber: licenseNumber.trim(),
         verifyingBody: verifyingBody.trim() || undefined,
       });
-      onDone(res.id);
+      onDone(result.id);
     } catch (err) {
       onError(err instanceof ApiError ? err.message : 'Verification submit failed.');
     } finally {
@@ -286,11 +504,12 @@ function ProfileForm({
   onError,
 }: {
   existing: ProviderProfile | null;
-  onSaved: () => void;
+  onSaved: () => void | Promise<void>;
   onError: (msg: string) => void;
 }) {
   const [displayName, setDisplayName] = useState(existing?.displayName ?? '');
   const [bio, setBio] = useState(existing?.bio ?? '');
+  const [kind, setKind] = useState<ProviderKind>(existing?.kind ?? 'COUNSELOR');
   const [specialties, setSpecialties] = useState((existing?.specialties ?? []).join(', '));
   const [minimumRate, setMinimumRate] = useState(String(existing?.rateCard?.minimumRate ?? 500));
   const [hourlyRate, setHourlyRate] = useState(String(existing?.rateCard?.hourlyRate ?? 1500));
@@ -306,6 +525,7 @@ function ProfileForm({
       await publishProfile({
         displayName: displayName.trim(),
         bio: bio.trim() || undefined,
+        kind,
         specialties: specialties
           .split(',')
           .map((s) => s.trim())
@@ -321,7 +541,7 @@ function ProfileForm({
       if (availabilityNote.trim()) {
         await updateAvailability({ note: availabilityNote.trim() }).catch(() => undefined);
       }
-      onSaved();
+      await onSaved();
     } catch (err) {
       onError(err instanceof ApiError ? err.message : 'Couldn’t save profile.');
     } finally {
@@ -335,6 +555,15 @@ function ProfileForm({
         Public pseudonymous profile. Clients never see your legal identity.
       </p>
       <form onSubmit={onSubmit} className="mt-4 flex flex-col gap-3">
+        <Segmented
+          legend="Kind"
+          value={kind}
+          onChange={setKind}
+          options={[
+            { value: 'COUNSELOR', label: 'Counselor', hint: 'Licensed path' },
+            { value: 'MODERATOR', label: 'Moderator', hint: 'Peer support' },
+          ]}
+        />
         <FieldGroup>
           <Field
             label="Display name"
@@ -377,6 +606,7 @@ function ProfileForm({
             value={availabilityNote}
             onChange={(e) => setAvailabilityNote(e.target.value)}
             placeholder="Weekday evenings…"
+            hint="Optional prose — bookable times live under Calendar"
           />
         </FieldGroup>
         <Button type="submit" loading={submitting}>

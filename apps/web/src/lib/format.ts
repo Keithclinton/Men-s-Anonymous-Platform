@@ -1,8 +1,10 @@
 import type {
   BookingStatus,
   PaymentStatus,
+  ProviderKind,
   RevealLevel,
   SessionChannelType,
+  StaffRole,
 } from '../api/types';
 
 export function formatKes(amount: number | null | undefined): string {
@@ -23,6 +25,25 @@ export function formatWhen(iso: string): string {
 
 export function channelLabel(channel: SessionChannelType): string {
   return channel === 'VIDEO' ? 'Video' : '1:1 chat';
+}
+
+export function providerKindLabel(kind: ProviderKind | undefined): string {
+  return kind === 'MODERATOR' ? 'Moderator' : 'Counselor';
+}
+
+export function staffRoleLabel(role: StaffRole | null | undefined): string {
+  switch (role) {
+    case 'SUPPORT_AGENT':
+      return 'Support';
+    case 'STAFF_MODERATOR':
+      return 'Staff moderator';
+    case 'COMPLIANCE_OFFICER':
+      return 'Compliance';
+    case 'SUPER_ADMIN':
+      return 'Super admin';
+    default:
+      return 'Admin';
+  }
 }
 
 export function bookingStatusLabel(status: BookingStatus): string {
