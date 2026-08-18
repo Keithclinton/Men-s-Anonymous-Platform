@@ -16,7 +16,7 @@ NestJS · PostgreSQL x2 via Prisma (app core + identity vault, kept physically s
 see ARCHITECTURE.md §3) · Redis (rate-limit storage) · M-Pesa (Daraja) billing. Deploys to
 Vercel as serverless functions — see [Deploying to Vercel](#deploying-to-vercel) below.
 No persistent background worker: scheduled sweeps (billing reconciliation, match-expiry)
-run as Vercel Cron Jobs hitting the API directly instead.
+run as a scheduled GitHub Actions workflow hitting the API directly instead.
 
 ## Layout
 
@@ -100,8 +100,8 @@ curl -X POST http://localhost:3000/auth/signup \
 
 There's no separate worker process to start locally. The two scheduled sweeps
 (`GET /billing/internal/reconcile`, `GET /matching/internal/sweep-expired`) only run when
-something calls them — in production that's Vercel Cron; locally, call them yourself when
-you need to test that path:
+something calls them — in production that's a scheduled GitHub Actions workflow
+(`.github/workflows/cron.yml`); locally, call them yourself when you need to test that path:
 
 ```bash
 curl http://localhost:3000/billing/internal/reconcile -H "Authorization: Bearer $CRON_SECRET"
@@ -126,7 +126,7 @@ doesn't need this — see below, it bundles `api/index.ts` directly.)
 The app runs as Vercel serverless functions via `api/index.ts`, which wraps the same Nest
 app `apps/api/src/main.ts` uses locally (see `apps/api/src/create-app.ts` — the two share
 everything except how the result is served). `vercel.json` rewrites every incoming path to
-that one function and defines the cron schedule.
+that one function.
 
 **1. Databases.** Provision **two separate** Postgres databases — not two databases inside
 one project/instance, separate projects, so the vault keeps a genuinely different blast
@@ -144,18 +144,21 @@ a small/free Upstash tier is plenty.
 **3. Environment variables.** Set everything from `.env.example` in the Vercel project
 settings: both database URLs (pooled), `REDIS_URL`, `JWT_ACCESS_SECRET`/`JWT_REFRESH_SECRET`,
 `ENCRYPTION_KEY`/`HASH_KEY`, `CORS_ORIGIN` (the frontend's deployed URL), `NODE_ENV=production`,
-and `CRON_SECRET`. That last one matters specially: Vercel automatically sends
-`Authorization: Bearer $CRON_SECRET` on cron-triggered requests when this env var is set on
-the project — that's what `InternalSecretGuard` checks. Without it set, the cron endpoints
-reject every request (fails closed, not open).
+and `CRON_SECRET` — a shared secret checked by `InternalSecretGuard` on the two scheduled-sweep
+endpoints. Without it set, those endpoints reject every request (fails closed, not open).
 
-**4. Cron frequency vs. your plan.** `vercel.json` requests the billing-reconciliation sweep
-every 5 minutes and the match-expiry sweep every 2 minutes. Vercel's cron frequency limits
-differ by plan and have changed over time — check your current plan's limits on Vercel's
-pricing page before deploying, and adjust the `schedule` cron strings in `vercel.json` (or
-your plan) if it caps you to something coarser. If you're stuck with infrequent/daily-only
-cron on your plan, an external scheduler (e.g. cron-job.org) hitting the same
-`Authorization: Bearer`-guarded endpoints on your deployed URL works identically.
+**4. Scheduling the sweeps.** Billing reconciliation and the match-expiry sweep are triggered
+by `.github/workflows/cron.yml` — a scheduled GitHub Actions workflow, not Vercel Cron. This
+is deliberate: Vercel's **Hobby plan caps native Cron Jobs at once per day**, which is too
+coarse for either job (reconciliation needs to catch stuck M-Pesa payments within minutes;
+match-expiry is enforcing a 15-minute window). GitHub Actions has no such limit and needs no
+paid plan. Add two repo secrets under **Settings → Secrets and variables → Actions**:
+- `API_BASE_URL` — the backend's deployed Vercel URL (no trailing slash)
+- `CRON_SECRET` — the same value set on the Vercel project
+
+If you're on Vercel Pro or higher and would rather use native Vercel Cron instead, add a
+`crons` array back to `vercel.json` (see git history for the shape) and remove the workflow —
+either works against the same `Authorization: Bearer`-guarded endpoints.
 
 **5. Migrations.** Vercel doesn't run `prisma migrate deploy` for you — run it yourself
 against the production database URLs before/after each deploy that changes the schema:
@@ -187,9 +190,13 @@ will say so explicitly.
 - **On Vercel: `PrismaClientInitializationError` / query engine not found** — almost always
   a `binaryTargets` mismatch with Vercel's current runtime, or a direct (non-pooled)
   connection string exhausting Postgres's connection limit under load. See step 1/6 above.
-- **On Vercel: cron endpoint returns 401** — `CRON_SECRET` isn't set on the Vercel project,
-  or doesn't match what's checked in code. It has to be set as a real env var there, not
-  just in your local `.env`.
+- **Scheduled sweep returns 401** — `CRON_SECRET` doesn't match between the two places it
+  needs to: the Vercel project's env vars (what the API checks against) and the GitHub repo
+  secret of the same name (what the Actions workflow sends). Both have to be set, and equal,
+  independently — setting it in one place doesn't propagate to the other.
+- **Scheduled sweep never seems to run** — check the workflow's own run history under the
+  repo's **Actions** tab, not just Vercel logs; a failure there (e.g. `API_BASE_URL` unset)
+  never reaches the API at all.
 
 ## Security
 

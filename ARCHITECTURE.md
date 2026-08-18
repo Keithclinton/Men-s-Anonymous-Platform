@@ -154,7 +154,7 @@ apps/
         filters/
       config/
       create-app.ts       # shared bootstrap for both main.ts and api/index.ts
-vercel.json                # rewrites + cron schedule
+vercel.json                 # rewrites (scheduling lives in .github/workflows/cron.yml, not here — §13b)
 ```
 
 ## 8. Phased Roadmap
@@ -240,7 +240,7 @@ Define a `PaymentGateway` interface in the `billing` module (`initiateCharge`, `
 - **STK Push (Lipa na M-Pesa Online)** for client charges: your server requests Safaricom to prompt the customer's phone; customer enters PIN; result comes back **asynchronously** to a callback URL you register — not in the initiating response. This means the booking/payment record must start in a `pending` state and transition on callback, not on the initial API response.
 - **OAuth token caching:** Daraja access tokens expire hourly — cache in Redis, refresh proactively, don't fetch per-request.
 - **Idempotency:** every STK push returns a `CheckoutRequestID`/`MerchantRequestID` — use it as the idempotency key, since callbacks can arrive more than once or be delayed.
-- **Reconciliation job (important):** callbacks occasionally never arrive (network drop, user closes the prompt). Run a scheduled sweep (§13: a Vercel Cron Job here, a BullMQ job if you're running this somewhere with a persistent process instead) that polls the **STK Push Query API** for any payment still `pending` after N minutes, so a real transaction doesn't get silently stuck. Don't rely on the callback alone.
+- **Reconciliation job (important):** callbacks occasionally never arrive (network drop, user closes the prompt). Run a scheduled sweep (§13: a GitHub Actions workflow here, a BullMQ job if you're running this somewhere with a persistent process instead) that polls the **STK Push Query API** for any payment still `pending` after N minutes, so a real transaction doesn't get silently stuck. Don't rely on the callback alone.
 - **Provider payouts (B2C):** paying providers out is a separate Daraja product (Business-to-Customer) with its own credentialing (security credential encrypted against Safaricom's public cert) and its own approval process with Safaricom — budget onboarding lead time for this, it's slower than getting C2B/STK push approved.
 - **Infra requirement:** the callback URL must be a publicly reachable HTTPS endpoint, including during development/certification with Safaricom — plan for a stable tunnel (ngrok or similar) or a real staging domain early, it'll block your Daraja sandbox-to-production certification otherwise.
 
@@ -270,9 +270,15 @@ them have a queue anymore:
 
 | Responsibility | Was | Now |
 |---|---|---|
-| Billing reconciliation | BullMQ repeatable job, worker process | Vercel Cron Job (`GET /billing/internal/reconcile`, every 5 min) |
-| Match-expiry (§10b's 15-min accept/decline window) | One BullMQ delayed job per request | `Booking.matchExpiresAt` timestamp + a Cron-invoked sweep (`GET /matching/internal/sweep-expired`, every 2 min) that reassigns/cancels anything past it |
+| Billing reconciliation | BullMQ repeatable job, worker process | Scheduled GitHub Actions workflow (`GET /billing/internal/reconcile`, every 5 min) |
+| Match-expiry (§10b's 15-min accept/decline window) | One BullMQ delayed job per request | `Booking.matchExpiresAt` timestamp + the same workflow sweeping (`GET /matching/internal/sweep-expired`, every 5 min) that reassigns/cancels anything past it |
 | Notification delivery | Queued to the worker, delivered async | Sent synchronously, inline, from the request that triggered it |
+
+Scheduling runs on GitHub Actions (`.github/workflows/cron.yml`) rather than native Vercel
+Cron Jobs — Vercel's Hobby plan caps those at once/day, which defeats the purpose of both
+jobs here. GitHub Actions has no such limit and needs no paid plan; the workflow just hits
+the same two endpoints over HTTP with the same `Authorization: Bearer` auth described below,
+so nothing about the API changed to accommodate it.
 
 The match-expiry change is the more interesting of the three: instead of scheduling a timer
 per booking (which needs something to hold the timer), each `REQUESTED` booking just carries
@@ -289,10 +295,14 @@ queue) once one is.
 
 ### 13b. Cron authentication
 
-Vercel Cron Jobs are plain scheduled GET requests to your own deployment; you can't attach
-custom headers to them. Vercel does automatically send `Authorization: Bearer $CRON_SECRET`
-if that env var is set on the project, so `InternalSecretGuard` checks that standard header
-rather than the custom `x-internal-secret` header the original worker-based design used.
+`InternalSecretGuard` checks a standard `Authorization: Bearer <CRON_SECRET>` header rather
+than a custom one — originally chosen because Vercel Cron sends exactly that automatically
+when `CRON_SECRET` is set on the project (you can't attach custom headers to a Vercel Cron
+invocation at all). Scheduling has since moved to GitHub Actions (§13a), which *can* send
+arbitrary headers, but there was no reason to special-case it: the workflow just sends the
+same standard header explicitly via `curl`, and the guard doesn't care who's calling as long
+as the bearer token matches — same secret, set independently in both the Vercel project's
+env vars and the GitHub repo's Actions secrets.
 
 ### 13c. Rate limiting needed a real store
 

@@ -1,0 +1,30 @@
+name: Scheduled sweeps
+
+# Vercel Hobby caps native Cron Jobs at once/day, which is too coarse for either of
+# these (billing reconciliation needs to catch stuck payments within minutes; the
+# match-expiry sweep is only meaningful close to the 15-minute accept/decline window
+# it's enforcing). GitHub Actions' schedule trigger has no such limit, so this replaces
+# vercel.json's cron config entirely — same endpoints, same auth, different scheduler.
+# See ARCHITECTURE.md §13b and README.md's "Deploying to Vercel" section.
+
+on:
+  schedule:
+    # GitHub doesn't guarantee exact timing under load, but this is close enough for
+    # both jobs — reconciliation wants ~5 min, and a request sitting up to ~5 min past
+    # its 15-minute match-expiry deadline before the sweep catches it is a non-issue.
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {} # manual trigger, useful for testing without waiting on the schedule
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Billing reconciliation
+        run: |
+          curl -fsS -X GET "${{ secrets.API_BASE_URL }}/billing/internal/reconcile" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+
+      - name: Match-expiry sweep
+        run: |
+          curl -fsS -X GET "${{ secrets.API_BASE_URL }}/matching/internal/sweep-expired" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
