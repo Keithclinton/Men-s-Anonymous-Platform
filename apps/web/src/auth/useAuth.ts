@@ -4,9 +4,10 @@ import type { MeResponse } from '../api/types';
 export interface AuthContextValue {
   user: MeResponse | null;
   ready: boolean;
-  signIn: (username: string, password: string, persist: boolean) => Promise<void>;
+  /** identifier is a handle for CLIENT accounts or an email for PROVIDER accounts. */
+  signIn: (identifier: string, password: string, persist: boolean) => Promise<void>;
   signUp: (input: {
-    username: string;
+    username?: string;
     password: string;
     role: 'CLIENT' | 'PROVIDER';
     email?: string;

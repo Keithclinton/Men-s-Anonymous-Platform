@@ -18,21 +18,27 @@ export interface TokenPair {
 }
 
 export interface SignupRequest {
-  username: string;
+  /** Required for CLIENT (their handle), unused for PROVIDER — providers sign up with email. */
+  username?: string;
   password: string;
   role?: 'CLIENT' | 'PROVIDER';
+  /** Required for PROVIDER (their login identifier); optional recovery contact for CLIENT. */
   email?: string;
   phone?: string;
 }
 
 export interface LoginRequest {
-  username: string;
+  /** Exactly one of username/email — the frontend picks based on what the user typed. */
+  username?: string;
+  email?: string;
   password: string;
 }
 
 export interface MeResponse {
   id: string;
   username: string;
+  /** Set for PROVIDER accounts (they sign in with email, not a handle); null otherwise. */
+  email: string | null;
   role: UserRole;
   status: UserStatus;
   createdAt: string;

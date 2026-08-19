@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
@@ -29,7 +30,36 @@ export class AuthService {
   ) {}
 
   async signup(dto: SignupDto): Promise<TokenPair> {
-    const existing = await this.prisma.user.findUnique({ where: { username: dto.username } });
+    const role = dto.role ?? 'CLIENT';
+
+    // PROVIDER accounts aren't anonymous — they sign in with their real email instead of a
+    // handle, so the User row gets an opaque generated username nobody ever sees or types.
+    // See ARCHITECTURE.md §3 and identity-vault.service.ts#findPseudonymByEmail.
+    if (role === 'PROVIDER') {
+      const existingPseudonym = await this.vault.findPseudonymByEmail(dto.email as string, {
+        actorPseudonym: 'system',
+        reason: 'signup_duplicate_check',
+      });
+      if (existingPseudonym) {
+        throw new ConflictException('An account with that email already exists');
+      }
+
+      const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+      const user = await this.prisma.user.create({
+        data: { username: `provider_${randomUUID()}`, passwordHash, role },
+      });
+
+      await this.vault.createIdentity(
+        { pseudonymId: user.id, email: dto.email, phone: dto.phone },
+        { actorPseudonym: user.id, reason: 'signup' },
+      );
+
+      return this.issueTokens(user.id, user.role);
+    }
+
+    const existing = await this.prisma.user.findUnique({
+      where: { username: dto.username as string },
+    });
     if (existing) {
       throw new ConflictException('That username is taken');
     }
@@ -37,9 +67,9 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
     const user = await this.prisma.user.create({
       data: {
-        username: dto.username,
+        username: dto.username as string,
         passwordHash,
-        role: dto.role ?? 'CLIENT',
+        role,
       },
     });
 
@@ -56,14 +86,26 @@ export class AuthService {
   }
 
   async login(dto: LoginDto): Promise<TokenPair> {
-    const user = await this.prisma.user.findUnique({ where: { username: dto.username } });
+    const user = dto.email
+      ? await this.findUserByEmail(dto.email)
+      : await this.prisma.user.findUnique({ where: { username: dto.username as string } });
+
     if (!user || !(await bcrypt.compare(dto.password, user.passwordHash))) {
-      throw new UnauthorizedException('Invalid username or password');
+      throw new UnauthorizedException('Invalid credentials');
     }
     if (user.status !== 'ACTIVE') {
       throw new UnauthorizedException('This account is not active');
     }
     return this.issueTokens(user.id, user.role);
+  }
+
+  private async findUserByEmail(email: string) {
+    const pseudonymId = await this.vault.findPseudonymByEmail(email, {
+      actorPseudonym: 'system',
+      reason: 'login',
+    });
+    if (!pseudonymId) return null;
+    return this.prisma.user.findUnique({ where: { id: pseudonymId } });
   }
 
   async refresh(refreshToken: string): Promise<TokenPair> {

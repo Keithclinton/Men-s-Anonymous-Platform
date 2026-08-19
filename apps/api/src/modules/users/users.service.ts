@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { CorePrismaService } from '../../common/prisma/core-prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { IdentityVaultService } from '../identity-vault/identity-vault.service';
 import { CreateRevealGrantDto } from './dto/create-reveal-grant.dto';
 
 /** Pseudonymous profile records + scoped reveal grants. See ARCHITECTURE.md §4 / product-rules §2. */
@@ -14,6 +15,7 @@ export class UsersService {
   constructor(
     private readonly prisma: CorePrismaService,
     private readonly audit: AuditService,
+    private readonly vault: IdentityVaultService,
   ) {}
 
   async getById(userId: string) {
@@ -32,7 +34,19 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    return user;
+
+    // PROVIDER accounts sign in with email, not a handle (see auth.service.ts#signup) — the
+    // generated `username` is opaque, so surface the real email for the frontend to display
+    // instead. Only ever this user reading their own record, so a vault read is fine here.
+    if (user.role === 'PROVIDER') {
+      const { email } = await this.vault.getContact(userId, {
+        actorPseudonym: userId,
+        reason: 'read_own_profile',
+      });
+      return { ...user, email };
+    }
+
+    return { ...user, email: null as string | null };
   }
 
   async listMyReveals(clientId: string) {

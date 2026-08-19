@@ -35,13 +35,17 @@ export function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const isProvider = role === 'PROVIDER';
+
   const usernameErr = usernameError(username);
   const passwordErr = passwordError(password);
   const confirmErr = confirm !== password ? 'Passwords don’t match.' : null;
   const emailErr = emailError(email);
   const phoneErr = phoneError(phone);
 
-  const step1Valid = !usernameErr && !passwordErr && !confirmErr && confirm.length > 0;
+  const step1Valid = isProvider
+    ? !emailErr && email.trim().length > 0 && !passwordErr && !confirmErr && confirm.length > 0
+    : !usernameErr && !passwordErr && !confirmErr && confirm.length > 0;
 
   function markTouched(...keys: string[]) {
     setTouched((prev) => {
@@ -59,11 +63,14 @@ export function RegisterPage() {
   }
 
   async function createAccount(includeRecovery: boolean) {
+    if (isProvider) {
+      markTouched('email', 'password', 'confirm');
+    }
     if (!step1Valid) {
       setStep(1);
       return;
     }
-    if (includeRecovery) {
+    if (!isProvider && includeRecovery) {
       markTouched('email', 'phone');
       if (emailErr || phoneErr) return;
     }
@@ -72,18 +79,22 @@ export function RegisterPage() {
     setSubmitting(true);
     try {
       await signUp({
-        username: username.trim(),
+        username: isProvider ? undefined : username.trim(),
         password,
         role,
-        email: includeRecovery && email.trim() ? email.trim() : undefined,
-        phone: includeRecovery && phone.trim() ? normalizePhone(phone) : undefined,
+        email: isProvider
+          ? email.trim()
+          : includeRecovery && email.trim()
+            ? email.trim()
+            : undefined,
+        phone: !isProvider && includeRecovery && phone.trim() ? normalizePhone(phone) : undefined,
         persist: false,
       });
       navigate('/home', { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.isConflict) {
         setStep(1);
-        setError('That handle is taken. Try another.');
+        setError(isProvider ? 'An account with that email already exists.' : 'That handle is taken. Try another.');
       } else if (err instanceof ApiError) {
         setError(err.message);
       } else {
@@ -97,7 +108,11 @@ export function RegisterPage() {
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     if (step === 1) {
-      goNext();
+      if (isProvider) {
+        await createAccount(false);
+      } else {
+        goNext();
+      }
       return;
     }
     await createAccount(true);
@@ -108,17 +123,25 @@ export function RegisterPage() {
       backTo="/"
       backLabel="Home"
       kicker={step === 1 ? 'Join' : 'Optional'}
-      title={step === 1 ? 'Create your handle' : 'Recovery, if you want it'}
+      title={step === 1 ? (isProvider ? 'Create your provider account' : 'Create your handle') : 'Recovery, if you want it'}
       subtitle={
         step === 1
-          ? 'This is the only name anyone here will see.'
+          ? isProvider
+            ? 'Providers aren’t anonymous — clients and admins can verify you by this email.'
+            : 'This is the only name anyone here will see.'
           : 'Skip to stay handle-only. Contact lives in a separate vault — counselors never see it.'
       }
       actions={
         step === 1 ? (
-          <Button type="submit" form="register-form">
-            Continue
-          </Button>
+          isProvider ? (
+            <Button type="submit" form="register-form" loading={submitting}>
+              Create account
+            </Button>
+          ) : (
+            <Button type="submit" form="register-form">
+              Continue
+            </Button>
+          )
         ) : (
           <>
             <Button type="submit" form="register-form" loading={submitting}>
@@ -133,7 +156,7 @@ export function RegisterPage() {
       footer={
         step === 1 ? (
           <p className="text-center text-[14px] text-mist">
-            Already have a handle?{' '}
+            Already have an account?{' '}
             <Link to="/login" className="text-cream underline decoration-line underline-offset-4 hover:decoration-brass">
               Sign in
             </Link>
@@ -153,7 +176,7 @@ export function RegisterPage() {
       }
     >
       <form id="register-form" onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
-        <StepRail step={step} steps={['Handle', 'Recovery']} />
+        {isProvider ? null : <StepRail step={step} steps={['Handle', 'Recovery']} />}
         {error ? <Notice tone="danger">{error}</Notice> : null}
 
         {step === 1 ? (
@@ -169,31 +192,46 @@ export function RegisterPage() {
             />
 
             <FieldGroup>
-              <Field
-                label="Handle"
-                name="username"
-                autoComplete="username"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                onBlur={() => markTouched('username')}
-                placeholder="quietoak42"
-                error={touched.username ? usernameErr : null}
-                trailing={
-                  <button
-                    type="button"
-                    className="text-[12px] font-medium uppercase tracking-[0.12em] text-brass hover:text-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass/70"
-                    onClick={() => {
-                      setUsername(suggestHandle());
-                      markTouched('username');
-                    }}
-                  >
-                    Suggest
-                  </button>
-                }
-              />
+              {isProvider ? (
+                <Field
+                  label="Email"
+                  name="email"
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  onBlur={() => markTouched('email')}
+                  placeholder="you@example.com"
+                  error={touched.email ? emailErr : null}
+                />
+              ) : (
+                <Field
+                  label="Handle"
+                  name="username"
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  onBlur={() => markTouched('username')}
+                  placeholder="quietoak42"
+                  error={touched.username ? usernameErr : null}
+                  trailing={
+                    <button
+                      type="button"
+                      className="text-[12px] font-medium uppercase tracking-[0.12em] text-brass hover:text-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass/70"
+                      onClick={() => {
+                        setUsername(suggestHandle());
+                        markTouched('username');
+                      }}
+                    >
+                      Suggest
+                    </button>
+                  }
+                />
+              )}
               <PasswordField
                 label="Password"
                 name="password"

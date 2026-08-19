@@ -8,6 +8,8 @@ export function HomePage() {
   if (!user) return null;
 
   const roleLabel = user.role === 'PROVIDER' ? 'Provider' : user.role === 'ADMIN' ? 'Admin' : 'Client';
+  const isProvider = user.role === 'PROVIDER';
+  const identifier = isProvider && user.email ? user.email : user.username;
 
   return (
     <AppShell>
@@ -16,7 +18,7 @@ export function HomePage() {
           <div className="min-w-0">
             <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-sage">You’re in</p>
             <h1 className="mt-2 break-all font-display text-[clamp(1.75rem,7vw,2.15rem)] leading-tight tracking-tight text-cream">
-              {user.username}
+              {identifier}
             </h1>
           </div>
           <span className="shrink-0 rounded-full border border-line bg-ink/40 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.14em] text-mist">
@@ -24,7 +26,9 @@ export function HomePage() {
           </span>
         </div>
         <p className="mt-3 text-[14px] leading-6 text-mist">
-          This handle is what others see. Reveal is optional and scoped — never a public dump.
+          {isProvider
+            ? 'Clients and admins can verify you by this email — providers aren’t anonymous.'
+            : 'This handle is what others see. Reveal is optional and scoped — never a public dump.'}
         </p>
       </Panel>
 

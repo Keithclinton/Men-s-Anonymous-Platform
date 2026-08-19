@@ -82,8 +82,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [scheduleRefresh]);
 
   const signIn = useCallback(
-    async (username: string, password: string, persist: boolean) => {
-      const pair = await authApi.login({ username, password });
+    async (identifier: string, password: string, persist: boolean) => {
+      const pair = identifier.includes('@')
+        ? await authApi.login({ email: identifier, password })
+        : await authApi.login({ username: identifier, password });
       await applySession(pair, persist);
     },
     [applySession],
@@ -91,18 +93,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = useCallback(
     async (input: {
-      username: string;
+      username?: string;
       password: string;
       role: 'CLIENT' | 'PROVIDER';
       email?: string;
       phone?: string;
       persist?: boolean;
     }) => {
-      const body: SignupRequest = {
-        username: input.username.trim(),
-        password: input.password,
-      };
+      const body: SignupRequest = { password: input.password };
       if (input.role !== 'CLIENT') body.role = input.role;
+      if (input.username) body.username = input.username.trim();
       if (input.email) body.email = input.email.trim();
       if (input.phone) body.phone = input.phone;
       const pair = await authApi.signup(body);

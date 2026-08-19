@@ -14,7 +14,7 @@ export function LoginPage() {
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from ?? '/home';
 
-  const [username, setUsername] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [persist, setPersist] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,11 +25,11 @@ export function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await signIn(username.trim(), password, persist);
+      await signIn(identifier.trim(), password, persist);
       navigate(from, { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.isUnauthorized) {
-        setError('Invalid handle or password.');
+        setError('Invalid handle/email or password.');
       } else if (err instanceof ApiError) {
         setError(err.message);
       } else {
@@ -46,9 +46,9 @@ export function LoginPage() {
       backLabel="Home"
       kicker="Sign in"
       title="Welcome back"
-      subtitle="Your handle is enough. Nothing else is required."
+      subtitle="Clients: your handle is enough. Providers: sign in with your email."
       actions={
-        <Button type="submit" form="login-form" loading={submitting} disabled={!username.trim() || !password}>
+        <Button type="submit" form="login-form" loading={submitting} disabled={!identifier.trim() || !password}>
           Sign in
         </Button>
       }
@@ -56,7 +56,7 @@ export function LoginPage() {
         <p className="text-center text-[14px] text-mist">
           New here?{' '}
           <Link to="/register" className="text-cream underline decoration-line underline-offset-4 hover:decoration-brass">
-            Create a handle
+            Create an account
           </Link>
         </p>
       }
@@ -66,15 +66,15 @@ export function LoginPage() {
 
         <FieldGroup>
           <Field
-            label="Handle"
-            name="username"
+            label="Handle or email"
+            name="identifier"
             autoComplete="username"
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="quietoak42"
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
+            placeholder="quietoak42 or you@example.com"
           />
           <PasswordField
             label="Password"
