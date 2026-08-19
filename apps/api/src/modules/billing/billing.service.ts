@@ -39,8 +39,10 @@ export class BillingService {
       description: 'Session payment',
     });
 
-    // Starts PENDING and stays that way until the callback (or the reconciliation job,
-    // see reconcilePending below) resolves it. Never assume success from this call alone.
+    // Real gateways start PENDING and stay that way until the callback (or the
+    // reconciliation job, see reconcilePending below) resolves it — never assume success
+    // from this call alone. MockGateway (PAYMENTS_MODE=mock) is the one exception: it
+    // resolves SUCCEEDED immediately so booking flows can be tested without Safaricom creds.
     await this.prisma.payment.create({
       data: {
         userId: params.userId,
@@ -48,7 +50,7 @@ export class BillingService {
         provider: 'MPESA',
         externalRef: result.externalRef,
         amount: params.amount,
-        status: 'PENDING',
+        status: result.status,
         direction: 'CHARGE',
       },
     });

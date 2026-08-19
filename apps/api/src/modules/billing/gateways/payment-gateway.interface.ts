@@ -18,7 +18,8 @@ export interface InitiateChargeParams {
 export interface InitiateChargeResult {
   /** M-Pesa CheckoutRequestID / Pesapal OrderTrackingId — the idempotency key downstream. */
   externalRef: string;
-  status: 'PENDING';
+  /** Real gateways only ever return PENDING here; SUCCEEDED is for MockGateway's instant-pay path. */
+  status: 'PENDING' | 'SUCCEEDED';
 }
 
 export interface PayoutParams {
