@@ -5,6 +5,7 @@ import { AdminPage } from './pages/AdminPage';
 import { BookPage } from './pages/BookPage';
 import { BookingDetailPage } from './pages/BookingDetailPage';
 import { BookingsPage } from './pages/BookingsPage';
+import { ClientProfilePage } from './pages/ClientProfilePage';
 import { HomePage } from './pages/HomePage';
 import { LibraryPage } from './pages/LibraryPage';
 import { LoginPage } from './pages/LoginPage';
@@ -73,6 +74,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <BookPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <ClientProfilePage />
               </ProtectedRoute>
             }
           />

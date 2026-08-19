@@ -4,10 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EncryptionService } from '../../common/encryption/encryption.service';
 import { CorePrismaService } from '../../common/prisma/core-prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { IdentityVaultService } from '../identity-vault/identity-vault.service';
 import { CreateRevealGrantDto } from './dto/create-reveal-grant.dto';
+import { UpsertClientProfileDto } from './dto/upsert-client-profile.dto';
 
 /** Pseudonymous profile records + scoped reveal grants. See ARCHITECTURE.md §4 / product-rules §2. */
 @Injectable()
@@ -16,6 +18,7 @@ export class UsersService {
     private readonly prisma: CorePrismaService,
     private readonly audit: AuditService,
     private readonly vault: IdentityVaultService,
+    private readonly encryption: EncryptionService,
   ) {}
 
   async getById(userId: string) {
@@ -35,6 +38,11 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
+    // clientProfile.intakeNotes is stored encrypted (see upsertMyProfile below) — only ever
+    // decrypted back out for the owning client reading their own record, same as the
+    // PROVIDER email case below.
+    const clientProfile = this.shapeClientProfile(user.clientProfile);
+
     // PROVIDER accounts sign in with email, not a handle (see auth.service.ts#signup) — the
     // generated `username` is opaque, so surface the real email for the frontend to display
     // instead. Only ever this user reading their own record, so a vault read is fine here.
@@ -43,10 +51,52 @@ export class UsersService {
         actorPseudonym: userId,
         reason: 'read_own_profile',
       });
-      return { ...user, email };
+      return { ...user, clientProfile, email };
     }
 
-    return { ...user, email: null as string | null };
+    return { ...user, clientProfile, email: null as string | null };
+  }
+
+  /** CLIENT self-service — preferences feed auto-match, intake notes are for the provider they book. */
+  async upsertMyProfile(userId: string, dto: UpsertClientProfileDto) {
+    const preferences = {
+      specialties: dto.specialties ?? [],
+      preferredChannel: dto.preferredChannel ?? null,
+    };
+    const encryptedNotes = this.encryption.encryptOrNull(dto.intakeNotes);
+
+    const profile = await this.prisma.clientProfile.upsert({
+      where: { userId },
+      create: { userId, preferences, intakeNotes: encryptedNotes },
+      update: { preferences, intakeNotes: encryptedNotes },
+    });
+
+    return this.shapeClientProfile(profile);
+  }
+
+  /** Flattens the stored `preferences` JSON blob and decrypts intakeNotes for API responses. */
+  private shapeClientProfile(
+    row: {
+      userId: string;
+      preferences: unknown;
+      intakeNotes: string | null;
+      createdAt: Date;
+      updatedAt: Date;
+    } | null,
+  ) {
+    if (!row) return null;
+    const preferences = (row.preferences ?? {}) as {
+      specialties?: string[];
+      preferredChannel?: 'CHAT' | 'VIDEO' | null;
+    };
+    return {
+      userId: row.userId,
+      specialties: preferences.specialties ?? [],
+      preferredChannel: preferences.preferredChannel ?? null,
+      intakeNotes: this.encryption.decryptOrNull(row.intakeNotes),
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
   }
 
   async listMyReveals(clientId: string) {

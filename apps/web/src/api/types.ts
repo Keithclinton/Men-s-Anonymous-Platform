@@ -43,7 +43,25 @@ export interface MeResponse {
   status: UserStatus;
   createdAt: string;
   providerProfile: ProviderProfile | null;
-  clientProfile: unknown | null;
+  clientProfile: ClientProfile | null;
+}
+
+export type SessionChannelPreference = 'CHAT' | 'VIDEO';
+
+export interface ClientProfile {
+  userId: string;
+  specialties: string[];
+  preferredChannel: SessionChannelPreference | null;
+  /** Decrypted for the owning client only — never shown to anyone else. */
+  intakeNotes: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface UpsertClientProfileRequest {
+  specialties?: string[];
+  preferredChannel?: SessionChannelPreference;
+  intakeNotes?: string;
 }
 
 export interface RateCard {

@@ -41,6 +41,9 @@ export function HomePage() {
           <ButtonLink to="/bookings" variant="ghost">
             Your sessions
           </ButtonLink>
+          <ButtonLink to="/profile" variant="ghost">
+            Your profile
+          </ButtonLink>
         </Panel>
       ) : null}
 

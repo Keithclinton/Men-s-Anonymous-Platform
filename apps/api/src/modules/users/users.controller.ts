@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put } from '@nestjs/common';
 import { AuthenticatedUser, CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../generated/prisma-core';
 import { CreateRevealGrantDto } from './dto/create-reveal-grant.dto';
+import { UpsertClientProfileDto } from './dto/upsert-client-profile.dto';
 import { UsersService } from './users.service';
 
 @Controller('users')
@@ -12,6 +13,12 @@ export class UsersController {
   @Get('me')
   me(@CurrentUser() user: AuthenticatedUser) {
     return this.users.getById(user.userId);
+  }
+
+  @Roles(Role.CLIENT)
+  @Put('me/profile')
+  upsertMyProfile(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpsertClientProfileDto) {
+    return this.users.upsertMyProfile(user.userId, dto);
   }
 
   @Roles(Role.CLIENT)
