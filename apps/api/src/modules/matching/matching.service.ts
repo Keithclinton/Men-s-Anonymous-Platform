@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { CorePrismaService } from '../../common/prisma/core-prisma.service';
-import { Booking } from '../../generated/prisma-core';
+import { Booking, ProviderKind } from '../../generated/prisma-core';
 import { BookingService } from '../booking/booking.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RequestMatchDto } from './dto/request-match.dto';
@@ -40,7 +40,7 @@ export class MatchingService {
       throw new ConflictException('scheduledStart must be in the future');
     }
 
-    const providerId = await this.pickLeastLoadedProvider(dto.specialty);
+    const providerId = await this.pickLeastLoadedProvider(dto.specialty, [], dto.kind);
     if (!providerId) {
       throw new NotFoundException(`No providers currently available for "${dto.specialty}"`);
     }
@@ -52,6 +52,7 @@ export class MatchingService {
       durationMin: dto.durationMin,
       channelType: dto.channelType,
       specialty: dto.specialty,
+      kind: dto.kind,
       matchExpiresAt: new Date(Date.now() + MATCH_EXPIRY_MS),
     });
 
@@ -93,7 +94,7 @@ export class MatchingService {
     }
 
     const excluded = [...booking.declinedProviderIds, booking.providerId];
-    const next = await this.pickLeastLoadedProvider(booking.specialty, excluded);
+    const next = await this.pickLeastLoadedProvider(booking.specialty, excluded, booking.kind ?? undefined);
 
     if (!next) {
       return this.prisma.booking.update({
@@ -134,9 +135,14 @@ export class MatchingService {
   private async pickLeastLoadedProvider(
     specialty: string,
     excludeIds: string[] = [],
+    kind?: ProviderKind,
   ): Promise<string | null> {
     const candidates = await this.prisma.providerProfile.findMany({
-      where: { specialties: { has: specialty }, userId: { notIn: excludeIds } },
+      where: {
+        specialties: { has: specialty },
+        userId: { notIn: excludeIds },
+        ...(kind ? { kind } : {}),
+      },
     });
     if (candidates.length === 0) {
       return null;

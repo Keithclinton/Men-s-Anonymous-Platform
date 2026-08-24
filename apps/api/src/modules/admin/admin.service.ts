@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { CorePrismaService } from '../../common/prisma/core-prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { IdentityVaultService } from '../identity-vault/identity-vault.service';
@@ -7,10 +7,9 @@ import { IdentityVaultService } from '../identity-vault/identity-vault.service';
  * Backs the separate admin frontend from ARCHITECTURE.md §9: provider verification queue,
  * user/booking oversight, break-glass vault access, aggregate-only analytics.
  *
- * The schema only has a single ADMIN role today — §9a's sub-role split (support agent /
- * moderator / compliance officer / super admin) needs its own role dimension to enforce
- * properly and is a deliberate follow-up, not done here. Every method below still writes
- * its own audit trail so that split can be retrofitted without losing history.
+ * §9a's sub-role split (support agent / moderator / compliance officer / super admin) is
+ * enforced via StaffRolesGuard on the controller — see admin.controller.ts. Every method
+ * below still writes its own audit trail regardless of which staff role called it.
  */
 @Injectable()
 export class AdminService {
@@ -64,6 +63,29 @@ export class AdminService {
       orderBy: { timestamp: 'desc' },
       take: Math.min(limit, 500),
     });
+  }
+
+  /** SUPER_ADMIN-only (see admin.controller.ts) — the one non-DB-script way to grant/revoke staff scope. */
+  async assignStaffRole(
+    userId: string,
+    staffRole: 'SUPPORT_AGENT' | 'STAFF_MODERATOR' | 'COMPLIANCE_OFFICER' | 'SUPER_ADMIN' | null | undefined,
+    adminId: string,
+  ) {
+    const target = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!target || target.role !== 'ADMIN') {
+      throw new NotFoundException('That user is not an admin account');
+    }
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { staffRole: staffRole ?? null },
+    });
+    await this.audit.record({
+      actorPseudonym: adminId,
+      action: 'ASSIGN_STAFF_ROLE',
+      target: userId,
+      metadata: { staffRole: staffRole ?? null },
+    });
+    return { id: user.id, staffRole: user.staffRole };
   }
 
   /** Time-boxed only in the sense that it's logged with a mandatory reason — real

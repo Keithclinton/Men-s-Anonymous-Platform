@@ -18,6 +18,7 @@ export interface TokenPair {
 interface RefreshPayload {
   sub: string;
   role: string;
+  staffRole?: string | null;
 }
 
 @Injectable()
@@ -54,7 +55,7 @@ export class AuthService {
         { actorPseudonym: user.id, reason: 'signup' },
       );
 
-      return this.issueTokens(user.id, user.role);
+      return this.issueTokens(user.id, user.role, user.staffRole);
     }
 
     const existing = await this.prisma.user.findUnique({
@@ -82,7 +83,7 @@ export class AuthService {
       );
     }
 
-    return this.issueTokens(user.id, user.role);
+    return this.issueTokens(user.id, user.role, user.staffRole);
   }
 
   async login(dto: LoginDto): Promise<TokenPair> {
@@ -96,7 +97,7 @@ export class AuthService {
     if (user.status !== 'ACTIVE') {
       throw new UnauthorizedException('This account is not active');
     }
-    return this.issueTokens(user.id, user.role);
+    return this.issueTokens(user.id, user.role, user.staffRole);
   }
 
   private async findUserByEmail(email: string) {
@@ -125,11 +126,15 @@ export class AuthService {
     }
     // TODO: rotate + blacklist the used refresh token (e.g. in Redis) once refresh-token
     // reuse detection matters — fine to defer past the initial scaffold.
-    return this.issueTokens(user.id, user.role);
+    return this.issueTokens(user.id, user.role, user.staffRole);
   }
 
-  private async issueTokens(userId: string, role: string): Promise<TokenPair> {
-    const payload = { sub: userId, role };
+  private async issueTokens(
+    userId: string,
+    role: string,
+    staffRole?: string | null,
+  ): Promise<TokenPair> {
+    const payload = { sub: userId, role, staffRole: staffRole ?? null };
     const [accessToken, refreshToken] = await Promise.all([
       this.jwt.signAsync(payload, {
         secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),

@@ -1,9 +1,13 @@
-import { IsDateString, IsIn, IsInt, IsString, Max, Min, MinLength } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
 
 export class RequestMatchDto {
   @IsString()
   @MinLength(2)
   specialty: string;
+
+  @IsOptional()
+  @IsIn(['COUNSELOR', 'MODERATOR'])
+  kind?: 'COUNSELOR' | 'MODERATOR';
 
   @IsDateString()
   scheduledStart: string;

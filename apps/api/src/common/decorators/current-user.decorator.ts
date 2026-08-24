@@ -4,6 +4,8 @@ export interface AuthenticatedUser {
   /** pseudonym_id — the only identifier that should ever flow through request handlers. */
   userId: string;
   role: string;
+  /** Only meaningful when role === 'ADMIN' — see StaffRolesGuard. */
+  staffRole?: string | null;
 }
 
 /** Pulls the pseudonymous user off the request, as attached by JwtStrategy. */

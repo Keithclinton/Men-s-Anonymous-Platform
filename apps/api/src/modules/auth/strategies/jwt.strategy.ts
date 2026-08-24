@@ -7,6 +7,7 @@ import { AuthenticatedUser } from '../../../common/decorators/current-user.decor
 interface AccessTokenPayload {
   sub: string;
   role: string;
+  staffRole?: string | null;
 }
 
 @Injectable()
@@ -26,6 +27,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   // Whatever this returns becomes `request.user` — kept to pseudonym_id + role only.
   validate(payload: AccessTokenPayload): AuthenticatedUser {
-    return { userId: payload.sub, role: payload.role };
+    return { userId: payload.sub, role: payload.role, staffRole: payload.staffRole ?? null };
   }
 }

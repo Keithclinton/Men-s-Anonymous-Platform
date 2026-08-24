@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsIn,
   IsObject,
   IsOptional,
   IsString,
@@ -17,6 +18,9 @@ export class UpsertProfileDto {
   @IsOptional()
   @IsString()
   bio?: string;
+
+  @IsIn(['COUNSELOR', 'MODERATOR'])
+  kind: 'COUNSELOR' | 'MODERATOR';
 
   @IsArray()
   @IsString({ each: true })

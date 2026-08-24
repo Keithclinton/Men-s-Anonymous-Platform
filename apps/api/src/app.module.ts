@@ -10,6 +10,7 @@ import { CorePrismaModule } from './common/prisma/core-prisma.module';
 import { EncryptionModule } from './common/encryption/encryption.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
+import { StaffRolesGuard } from './common/guards/staff-roles.guard';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { HealthController } from './health.controller';
 
@@ -72,6 +73,7 @@ import { AdminModule } from './modules/admin/admin.module';
     // Authenticated by default; routes opt out with @Public(). See common/guards.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_GUARD, useClass: StaffRolesGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
     { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
   ],

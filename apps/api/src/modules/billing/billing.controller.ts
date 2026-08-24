@@ -6,7 +6,9 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { InternalSecretGuard } from '../../common/guards/internal-secret.guard';
 import { Role } from '../../generated/prisma-core';
 import { BillingService } from './billing.service';
+import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { PayForBookingDto } from './dto/pay-for-booking.dto';
+import { RequestPayoutDto } from './dto/request-payout.dto';
 
 @Controller('billing')
 export class BillingController {
@@ -36,6 +38,41 @@ export class BillingController {
     @Param('bookingId') bookingId: string,
   ) {
     return this.billing.getPaymentStatus(bookingId, user.userId);
+  }
+
+  @Roles(Role.PROVIDER)
+  @Get('providers/me/earnings')
+  getProviderEarnings(@CurrentUser() user: AuthenticatedUser) {
+    return this.billing.getProviderEarnings(user.userId);
+  }
+
+  /**
+   * Same throttle rationale as payForBooking above — this also fires a real STK/B2C prompt.
+   */
+  @Roles(Role.PROVIDER)
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @Post('providers/me/payout')
+  requestPayout(@CurrentUser() user: AuthenticatedUser, @Body() dto: RequestPayoutDto) {
+    return this.billing.requestProviderPayout(user.userId, dto);
+  }
+
+  @Public()
+  @Get('plans')
+  listPlans() {
+    return this.billing.listPlans();
+  }
+
+  @Roles(Role.CLIENT)
+  @Get('subscriptions/mine')
+  listMySubscriptions(@CurrentUser() user: AuthenticatedUser) {
+    return this.billing.listMySubscriptions(user.userId);
+  }
+
+  @Roles(Role.CLIENT)
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @Post('subscriptions')
+  createSubscription(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateSubscriptionDto) {
+    return this.billing.createSubscription(user.userId, dto);
   }
 
   /**

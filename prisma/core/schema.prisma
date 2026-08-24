@@ -69,6 +69,21 @@ enum SubscriptionStatus {
   CANCELED
 }
 
+enum ProviderKind {
+  COUNSELOR
+  MODERATOR
+}
+
+/// Sub-roles within Role.ADMIN — see ARCHITECTURE.md §9a. SUPER_ADMIN has every permission;
+/// the others are scoped. Null on an ADMIN row means "not yet assigned a scope" and should
+/// be treated as no admin permissions at all (see StaffRolesGuard).
+enum StaffRole {
+  SUPPORT_AGENT
+  STAFF_MODERATOR
+  COMPLIANCE_OFFICER
+  SUPER_ADMIN
+}
+
 enum ResourceType {
   ARTICLE
   VIDEO
@@ -89,6 +104,8 @@ model User {
   username     String     @unique
   passwordHash String
   role         Role
+  /// Only meaningful when role = ADMIN — see StaffRole above.
+  staffRole    StaffRole?
   status       UserStatus @default(ACTIVE)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
@@ -98,6 +115,8 @@ model User {
 
   bookingsAsClient   Booking[] @relation("BookingClient")
   bookingsAsProvider Booking[] @relation("BookingProvider")
+
+  availabilitySlots AvailabilitySlot[]
 
   payments      Payment[]
   subscriptions Subscription[]
@@ -113,27 +132,46 @@ model User {
 
 /// Public-facing, pseudonymous. Real credentials/verification docs stay in the vault.
 model ProviderProfile {
-  userId       String   @id
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String       @id
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   displayName  String
   bio          String?
+  kind         ProviderKind @default(COUNSELOR)
   specialties  String[]
   rateCard     Json?
   availability Json?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 
   @@map("provider_profiles")
 }
 
+/// Provider-published bookable times. Booking a slot atomically claims it (bookingId set) —
+/// see booking.service.ts#createBooking. Distinct from ProviderProfile.availability, which is
+/// just free-form prose.
+model AvailabilitySlot {
+  id          String   @id @default(uuid())
+  providerId  String
+  provider    User     @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  start       DateTime
+  durationMin Int
+  /// Null = open. Set exactly once, when a client books it.
+  bookingId   String?  @unique
+  booking     Booking? @relation(fields: [bookingId], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@index([providerId])
+  @@map("availability_slots")
+}
+
 model ClientProfile {
-  userId       String   @id
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  preferences  Json?
+  userId      String   @id
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  preferences Json?
   /// Encrypted at the application layer before it ever reaches this column.
-  intakeNotes  String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  intakeNotes String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@map("client_profiles")
 }
@@ -164,30 +202,34 @@ model IdentityRevealGrant {
 }
 
 model Booking {
-  id            String        @id @default(uuid())
-  clientId      String
-  client        User          @relation("BookingClient", fields: [clientId], references: [id])
-  providerId    String
-  provider      User          @relation("BookingProvider", fields: [providerId], references: [id])
-  scheduledStart DateTime
-  durationMin   Int
-  billingType   BillingType
-  status        BookingStatus @default(REQUESTED)
+  id                  String        @id @default(uuid())
+  clientId            String
+  client              User          @relation("BookingClient", fields: [clientId], references: [id])
+  providerId          String
+  provider            User          @relation("BookingProvider", fields: [providerId], references: [id])
+  scheduledStart      DateTime
+  durationMin         Int
+  billingType         BillingType
+  status              BookingStatus @default(REQUESTED)
   /// Set only by the auto-match flow (ARCHITECTURE.md §10b) — direct bookings go straight
   /// to CONFIRMED against a provider's published slot and never need this.
-  specialty            String?
+  specialty           String?
+  /// The kind constraint the client asked for at request time (null = either). Carried
+  /// through reassignment so a re-match doesn't drift from what was actually requested.
+  kind                ProviderKind?
   /// Providers who declined (or timed out on) this request, so re-matching doesn't loop
   /// back to them. Only meaningful alongside `specialty`.
-  declinedProviderIds  String[] @default([])
+  declinedProviderIds String[]      @default([])
   /// Auto-match accept/decline deadline (ARCHITECTURE.md §10b). Set on request/reassignment,
   /// cleared on confirm/cancel. A scheduled sweep (no persistent worker on serverless — see
   /// MatchingService.sweepExpired) reassigns/cancels anything still REQUESTED past this.
-  matchExpiresAt       DateTime?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  matchExpiresAt      DateTime?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
 
   session  Session?
   payments Payment[]
+  slot     AvailabilitySlot?
 
   @@index([clientId])
   @@index([providerId])
@@ -197,14 +239,14 @@ model Booking {
 
 /// Metadata only — never message/video content. See ARCHITECTURE.md §6.
 model Session {
-  id          String       @id @default(uuid())
-  bookingId   String       @unique
-  booking     Booking      @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  id          String      @id @default(uuid())
+  bookingId   String      @unique
+  booking     Booking     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   channelType ChannelType
   roomRef     String?
   startedAt   DateTime?
   endedAt     DateTime?
-  createdAt   DateTime     @default(now())
+  createdAt   DateTime    @default(now())
 
   feedback Feedback?
 
@@ -262,11 +304,11 @@ model Feedback {
 }
 
 model SupportGroup {
-  id        String                    @id @default(uuid())
+  id        String   @id @default(uuid())
   topic     String
   schedule  DateTime
   capacity  Int
-  createdAt DateTime                  @default(now())
+  createdAt DateTime @default(now())
 
   memberships SupportGroupMembership[]
 
@@ -274,12 +316,12 @@ model SupportGroup {
 }
 
 model SupportGroupMembership {
-  id             String       @id @default(uuid())
-  groupId        String
-  group          SupportGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  userId         String
-  user           User         @relation(fields: [userId], references: [id])
-  joinedAt       DateTime     @default(now())
+  id       String       @id @default(uuid())
+  groupId  String
+  group    SupportGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User         @relation(fields: [userId], references: [id])
+  joinedAt DateTime     @default(now())
 
   @@unique([groupId, userId])
   @@map("support_group_memberships")

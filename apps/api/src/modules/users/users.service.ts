@@ -28,6 +28,7 @@ export class UsersService {
         id: true,
         username: true,
         role: true,
+        staffRole: true,
         status: true,
         createdAt: true,
         providerProfile: true,

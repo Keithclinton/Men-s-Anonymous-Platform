@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
 import { AuthenticatedUser, CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { StaffRoles } from '../../common/decorators/staff-roles.decorator';
 import { Role } from '../../generated/prisma-core';
 import { CreateSupportGroupDto } from './dto/create-support-group.dto';
 import { SupportGroupsService } from './support-groups.service';
@@ -22,6 +23,7 @@ export class SupportGroupsController {
   }
 
   @Roles(Role.ADMIN)
+  @StaffRoles('STAFF_MODERATOR')
   @Post()
   create(@Body() dto: CreateSupportGroupDto) {
     return this.groups.create(dto);
