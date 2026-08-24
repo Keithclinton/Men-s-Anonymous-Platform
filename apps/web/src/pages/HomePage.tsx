@@ -2,14 +2,22 @@ import { useAuth } from '../auth/useAuth';
 import { AppShell } from '../components/layout/AppShell';
 import { Panel } from '../components/layout/Panel';
 import { ButtonLink } from '../components/ui/Button';
+import { staffRoleLabel } from '../lib/format';
 
 export function HomePage() {
   const { user } = useAuth();
   if (!user) return null;
 
-  const roleLabel = user.role === 'PROVIDER' ? 'Provider' : user.role === 'ADMIN' ? 'Admin' : 'Client';
   const isProvider = user.role === 'PROVIDER';
   const identifier = isProvider && user.email ? user.email : user.username;
+  const roleLabel =
+    user.role === 'PROVIDER'
+      ? user.providerProfile?.kind === 'MODERATOR'
+        ? 'Moderator'
+        : 'Counselor'
+      : user.role === 'ADMIN'
+        ? staffRoleLabel(user.staffRole)
+        : 'Client';
 
   return (
     <AppShell>
@@ -43,6 +51,9 @@ export function HomePage() {
           </ButtonLink>
           <ButtonLink to="/profile" variant="ghost">
             Your profile
+          </ButtonLink>
+          <ButtonLink to="/plans" variant="ghost">
+            Session plans
           </ButtonLink>
         </Panel>
       ) : null}

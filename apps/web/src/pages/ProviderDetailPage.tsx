@@ -8,7 +8,7 @@ import { AppShell } from '../components/layout/AppShell';
 import { Panel } from '../components/layout/Panel';
 import { ButtonLink } from '../components/ui/Button';
 import { Notice } from '../components/ui/Notice';
-import { formatKes } from '../lib/format';
+import { formatKes, providerKindLabel } from '../lib/format';
 
 export function ProviderDetailPage() {
   const { id = '' } = useParams();
@@ -47,7 +47,9 @@ export function ProviderDetailPage() {
       {provider ? (
         <div className="flex flex-col gap-3">
           <Panel className="p-5">
-            <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-sage">Provider</p>
+            <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-sage">
+              {providerKindLabel(provider.kind)}
+            </p>
             <h1 className="mt-2 font-display text-[clamp(1.75rem,7vw,2.2rem)] tracking-tight text-cream">
               {provider.displayName}
             </h1>

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import {
   breakGlass,
   decideVerification,
@@ -19,11 +19,39 @@ import { Button } from '../components/ui/Button';
 import { Field, FieldGroup } from '../components/ui/Field';
 import { Notice } from '../components/ui/Notice';
 import { Segmented } from '../components/ui/Segmented';
-import { defaultScheduleInput, formatWhen, localInputToIso } from '../lib/format';
+import { defaultScheduleInput, formatWhen, localInputToIso, staffRoleLabel } from '../lib/format';
+
+function canAccess(
+  staffRole: string | null | undefined,
+  allowed: Array<'SUPPORT_AGENT' | 'STAFF_MODERATOR' | 'COMPLIANCE_OFFICER' | 'SUPER_ADMIN'>,
+) {
+  if (staffRole === 'SUPER_ADMIN') return true;
+  return staffRole != null && allowed.includes(staffRole as (typeof allowed)[number]);
+}
 
 export function AdminPage() {
   const { user } = useAuth();
-  const [tab, setTab] = useState<'verify' | 'users' | 'content' | 'audit'>('verify');
+  const staffRole = user?.staffRole;
+  const tabs = useMemo(
+    () =>
+      (
+        [
+          canAccess(staffRole, ['COMPLIANCE_OFFICER']) ? (['verify', 'Verifications'] as const) : null,
+          canAccess(staffRole, ['SUPPORT_AGENT', 'STAFF_MODERATOR', 'COMPLIANCE_OFFICER'])
+            ? (['users', 'Users'] as const)
+            : null,
+          canAccess(staffRole, ['STAFF_MODERATOR']) ? (['content', 'Content'] as const) : null,
+          canAccess(staffRole, ['SUPPORT_AGENT', 'STAFF_MODERATOR', 'COMPLIANCE_OFFICER'])
+            ? (['audit', 'Audit'] as const)
+            : null,
+        ] as const
+      ).filter(Boolean) as Array<readonly ['verify' | 'users' | 'content' | 'audit', string]>,
+    [staffRole],
+  );
+
+  const [tab, setTab] = useState<'verify' | 'users' | 'content' | 'audit'>(
+    tabs[0]?.[0] ?? 'verify',
+  );
   const [queue, setQueue] = useState<PendingVerification[]>([]);
   const [detail, setDetail] = useState<VerificationDetail | null>(null);
   const [audit, setAudit] = useState<AuditLogEntry[]>([]);
@@ -38,6 +66,17 @@ export function AdminPage() {
 
   useEffect(() => {
     if (user?.role !== 'ADMIN') return;
+    if (!tabs.some((t) => t[0] === tab) && tabs[0]) {
+      setTab(tabs[0][0]);
+    }
+  }, [user?.role, staffRole, tab, tabs]);
+
+  useEffect(() => {
+    if (user?.role !== 'ADMIN') return;
+    if (!canAccess(staffRole, ['COMPLIANCE_OFFICER'])) {
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     void refreshQueue()
@@ -50,7 +89,7 @@ export function AdminPage() {
     return () => {
       cancelled = true;
     };
-  }, [user?.role]);
+  }, [user?.role, staffRole]);
 
   if (user && user.role !== 'ADMIN') {
     return (
@@ -62,15 +101,9 @@ export function AdminPage() {
 
   return (
     <AppShell title="Admin">
+      <p className="mb-3 text-[13px] text-mist">{staffRoleLabel(staffRole)}</p>
       <div className="no-scrollbar mb-4 flex gap-2 overflow-x-auto">
-        {(
-          [
-            ['verify', 'Verifications'],
-            ['users', 'Users'],
-            ['content', 'Content'],
-            ['audit', 'Audit'],
-          ] as const
-        ).map(([id, label]) => (
+        {tabs.map(([id, label]) => (
           <button
             key={id}
             type="button"
@@ -184,7 +217,14 @@ export function AdminPage() {
         )
       ) : null}
 
-      {tab === 'users' ? <UserTools onNotice={setNotice} onError={setError} /> : null}
+      {tab === 'users' ? (
+        <UserTools
+          onNotice={setNotice}
+          onError={setError}
+          canSuspend={canAccess(staffRole, ['SUPPORT_AGENT', 'STAFF_MODERATOR'])}
+          canBreakGlass={canAccess(staffRole, ['COMPLIANCE_OFFICER'])}
+        />
+      ) : null}
       {tab === 'content' ? <ContentTools onNotice={setNotice} onError={setError} /> : null}
 
       {tab === 'audit' ? (
@@ -207,9 +247,13 @@ export function AdminPage() {
 function UserTools({
   onNotice,
   onError,
+  canSuspend,
+  canBreakGlass,
 }: {
   onNotice: (msg: string) => void;
   onError: (msg: string) => void;
+  canSuspend: boolean;
+  canBreakGlass: boolean;
 }) {
   const [userId, setUserId] = useState('');
   const [reason, setReason] = useState('');
@@ -218,77 +262,89 @@ function UserTools({
 
   return (
     <div className="flex flex-col gap-3">
-      <Panel className="p-5">
-        <FieldGroup>
-          <Field
-            label="User id (pseudonym)"
-            name="userId"
-            value={userId}
-            onChange={(e) => setUserId(e.target.value)}
-          />
-        </FieldGroup>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <Button
-            loading={acting}
-            onClick={() => {
-              setActing(true);
-              void suspendUser(userId.trim())
-                .then(() => onNotice('User suspended.'))
-                .catch((err) => onError(err instanceof ApiError ? err.message : 'Failed.'))
-                .finally(() => setActing(false));
-            }}
-          >
-            Suspend
-          </Button>
-          <Button
-            variant="secondary"
-            loading={acting}
-            onClick={() => {
-              setActing(true);
-              void reinstateUser(userId.trim())
-                .then(() => onNotice('User reinstated.'))
-                .catch((err) => onError(err instanceof ApiError ? err.message : 'Failed.'))
-                .finally(() => setActing(false));
-            }}
-          >
-            Reinstate
-          </Button>
-        </div>
-      </Panel>
-
-      <Panel className="p-5">
-        <p className="text-[13px] text-mist">Break-glass vault access — justified and logged.</p>
-        <form
-          className="mt-3 flex flex-col gap-3"
-          onSubmit={(event: FormEvent) => {
-            event.preventDefault();
-            setActing(true);
-            void breakGlass(userId.trim(), reason.trim())
-              .then((record) => {
-                setGlass(
-                  `Name: ${record.name ?? '—'} · Email: ${record.email ?? '—'} · Phone: ${record.phone ?? '—'}`,
-                );
-                onNotice('Vault access logged.');
-              })
-              .catch((err) => onError(err instanceof ApiError ? err.message : 'Failed.'))
-              .finally(() => setActing(false));
-          }}
-        >
+      {canSuspend ? (
+        <Panel className="p-5">
           <FieldGroup>
             <Field
-              label="Reason (10+ chars)"
-              name="reason"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              required
+              label="User id (pseudonym)"
+              name="userId"
+              value={userId}
+              onChange={(e) => setUserId(e.target.value)}
             />
           </FieldGroup>
-          <Button type="submit" variant="danger" loading={acting}>
-            Break glass
-          </Button>
-        </form>
-        {glass ? <p className="mt-3 break-all text-[13px] text-cream">{glass}</p> : null}
-      </Panel>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <Button
+              loading={acting}
+              onClick={() => {
+                setActing(true);
+                void suspendUser(userId.trim())
+                  .then(() => onNotice('User suspended.'))
+                  .catch((err) => onError(err instanceof ApiError ? err.message : 'Failed.'))
+                  .finally(() => setActing(false));
+              }}
+            >
+              Suspend
+            </Button>
+            <Button
+              variant="secondary"
+              loading={acting}
+              onClick={() => {
+                setActing(true);
+                void reinstateUser(userId.trim())
+                  .then(() => onNotice('User reinstated.'))
+                  .catch((err) => onError(err instanceof ApiError ? err.message : 'Failed.'))
+                  .finally(() => setActing(false));
+              }}
+            >
+              Reinstate
+            </Button>
+          </div>
+        </Panel>
+      ) : null}
+
+      {canBreakGlass ? (
+        <Panel className="p-5">
+          <p className="text-[13px] text-mist">Break-glass vault access — justified and logged.</p>
+          <form
+            className="mt-3 flex flex-col gap-3"
+            onSubmit={(event: FormEvent) => {
+              event.preventDefault();
+              setActing(true);
+              void breakGlass(userId.trim(), reason.trim())
+                .then((record) => {
+                  setGlass(
+                    `Name: ${record.name ?? '—'} · Email: ${record.email ?? '—'} · Phone: ${record.phone ?? '—'}`,
+                  );
+                  onNotice('Vault access logged.');
+                })
+                .catch((err) => onError(err instanceof ApiError ? err.message : 'Failed.'))
+                .finally(() => setActing(false));
+            }}
+          >
+            <FieldGroup>
+              {!canSuspend ? (
+                <Field
+                  label="User id (pseudonym)"
+                  name="userId"
+                  value={userId}
+                  onChange={(e) => setUserId(e.target.value)}
+                />
+              ) : null}
+              <Field
+                label="Reason (10+ chars)"
+                name="reason"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                required
+              />
+            </FieldGroup>
+            <Button type="submit" variant="danger" loading={acting}>
+              Break glass
+            </Button>
+          </form>
+          {glass ? <p className="mt-3 break-all text-[13px] text-cream">{glass}</p> : null}
+        </Panel>
+      ) : null}
     </div>
   );
 }

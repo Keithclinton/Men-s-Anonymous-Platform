@@ -2,17 +2,19 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError } from '../api/errors';
 import { listProviders } from '../api/providers';
-import type { ProviderProfile } from '../api/types';
+import type { ProviderKind, ProviderProfile } from '../api/types';
 import { AppShell } from '../components/layout/AppShell';
 import { Panel } from '../components/layout/Panel';
 import { Notice } from '../components/ui/Notice';
 import { cn } from '../lib/cn';
-import { formatKes } from '../lib/format';
+import { formatKes, providerKindLabel } from '../lib/format';
 
 const SPECIALTIES = ['All', 'career', 'relationships', 'mental health', 'leadership'] as const;
+const KINDS: Array<'All' | ProviderKind> = ['All', 'COUNSELOR', 'MODERATOR'];
 
 export function ProvidersPage() {
   const [specialty, setSpecialty] = useState<(typeof SPECIALTIES)[number]>('All');
+  const [kind, setKind] = useState<(typeof KINDS)[number]>('All');
   const [providers, setProviders] = useState<ProviderProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -22,7 +24,10 @@ export function ProvidersPage() {
     setLoading(true);
     setError(null);
 
-    void listProviders(specialty === 'All' ? undefined : specialty)
+    void listProviders({
+      specialty: specialty === 'All' ? undefined : specialty,
+      kind: kind === 'All' ? undefined : kind,
+    })
       .then((rows) => {
         if (!cancelled) setProviders(rows);
       })
@@ -37,17 +42,35 @@ export function ProvidersPage() {
     return () => {
       cancelled = true;
     };
-  }, [specialty]);
+  }, [specialty, kind]);
 
   return (
     <AppShell title="Find support">
       <p className="mb-4 max-w-[40ch] text-[14px] leading-6 text-mist">
-        Pseudonymous profiles only. Or{' '}
+        Pick a counselor or moderator — or{' '}
         <Link to="/match" className="text-cream underline decoration-line underline-offset-4">
           auto-match
         </Link>{' '}
-        by specialty without picking a person.
+        by specialty.
       </p>
+
+      <div className="no-scrollbar -mx-4 mb-2 flex gap-2 overflow-x-auto px-4">
+        {KINDS.map((item) => (
+          <button
+            key={item}
+            type="button"
+            onClick={() => setKind(item)}
+            className={cn(
+              'shrink-0 rounded-full border px-3.5 py-2 text-[13px] transition',
+              kind === item
+                ? 'border-brass/60 bg-surface-2 text-cream'
+                : 'border-line text-mist hover:border-mist/40 hover:text-cream',
+            )}
+          >
+            {item === 'All' ? 'All kinds' : providerKindLabel(item)}
+          </button>
+        ))}
+      </div>
 
       <div className="no-scrollbar -mx-4 mb-4 flex gap-2 overflow-x-auto px-4">
         {SPECIALTIES.map((item) => (
@@ -74,8 +97,9 @@ export function ProvidersPage() {
       ) : providers.length === 0 ? (
         <Panel className="p-5">
           <p className="text-[14px] leading-6 text-mist">
-            No published providers yet{specialty !== 'All' ? ` for “${specialty}”` : ''}. Check back once
-            someone has been verified and gone live.
+            No published providers yet
+            {kind !== 'All' ? ` (${providerKindLabel(kind).toLowerCase()}s)` : ''}
+            {specialty !== 'All' ? ` for “${specialty}”` : ''}.
           </p>
         </Panel>
       ) : (
@@ -86,7 +110,10 @@ export function ProvidersPage() {
                 <Panel className="p-4 transition hover:border-mist/30">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <h2 className="font-display text-[1.25rem] tracking-tight text-cream">
+                      <p className="text-[11px] uppercase tracking-[0.12em] text-sage">
+                        {providerKindLabel(provider.kind)}
+                      </p>
+                      <h2 className="mt-1 font-display text-[1.25rem] tracking-tight text-cream">
                         {provider.displayName}
                       </h2>
                       {provider.bio ? (
