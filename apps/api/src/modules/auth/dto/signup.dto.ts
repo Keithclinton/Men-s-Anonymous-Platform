@@ -1,4 +1,13 @@
-import { IsEmail, IsIn, IsOptional, IsString, Matches, MinLength, ValidateIf } from 'class-validator';
+import {
+  IsEmail,
+  IsIn,
+  IsOptional,
+  IsString,
+  Matches,
+  MinLength,
+  ValidateIf,
+  ValidationArguments,
+} from 'class-validator';
 
 export class SignupDto {
   @IsOptional()
@@ -6,10 +15,12 @@ export class SignupDto {
   role?: 'CLIENT' | 'PROVIDER';
 
   /**
-   * Required for CLIENT (the pseudonymous handle they're known by), unused for PROVIDER —
-   * providers aren't meant to be anonymous, so they sign in with email instead (see below).
+   * Required for CLIENT (the pseudonymous handle they're known by). Optional for PROVIDER —
+   * login still always uses email (see below), but if given, this handle is kept as their
+   * internal/admin-facing identifier instead of an opaque generated one. Validated the same
+   * way for both roles whenever it's actually present.
    */
-  @ValidateIf((o: SignupDto) => o.role !== 'PROVIDER')
+  @ValidateIf((o: SignupDto) => o.role !== 'PROVIDER' || !!o.username)
   @IsString()
   @MinLength(3)
   @Matches(/^[a-zA-Z0-9_]+$/, {
@@ -27,7 +38,15 @@ export class SignupDto {
    * contact for CLIENT, same as before.
    */
   @ValidateIf((o: SignupDto) => o.role === 'PROVIDER' || !!o.email)
-  @IsEmail()
+  @IsEmail(
+    {},
+    {
+      message: (args: ValidationArguments) =>
+        (args.object as SignupDto).role === 'PROVIDER'
+          ? 'A valid email is required to register as a provider — CLIENT accounts use a handle instead'
+          : 'email must be a valid email address',
+    },
+  )
   email?: string;
 
   /** Optional — E.164 format recommended (e.g. +2547XXXXXXXX) for later M-Pesa reuse. */

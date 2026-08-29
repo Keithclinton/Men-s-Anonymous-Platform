@@ -46,6 +46,23 @@ export function staffRoleLabel(role: StaffRole | null | undefined): string {
   }
 }
 
+export function verificationStatusLabel(
+  status: 'NOT_SUBMITTED' | 'PENDING' | 'APPROVED' | 'REJECTED',
+): string {
+  switch (status) {
+    case 'NOT_SUBMITTED':
+      return 'Not submitted yet';
+    case 'PENDING':
+      return 'Pending review';
+    case 'APPROVED':
+      return 'Approved';
+    case 'REJECTED':
+      return 'Rejected — resubmit below';
+    default:
+      return status;
+  }
+}
+
 export function bookingStatusLabel(status: BookingStatus): string {
   switch (status) {
     case 'REQUESTED':

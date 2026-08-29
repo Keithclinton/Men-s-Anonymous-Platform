@@ -5,13 +5,14 @@ import {
   getVerificationDetail,
   listAuditLog,
   listPendingVerifications,
+  listUsers,
   reinstateUser,
   suspendUser,
 } from '../api/admin';
 import { createResource } from '../api/resources';
 import { createSupportGroup } from '../api/groups';
 import { ApiError } from '../api/errors';
-import type { AuditLogEntry, PendingVerification, VerificationDetail } from '../api/types';
+import type { AdminUser, AuditLogEntry, PendingVerification, VerificationDetail } from '../api/types';
 import { useAuth } from '../auth/useAuth';
 import { AppShell } from '../components/layout/AppShell';
 import { Panel } from '../components/layout/Panel';
@@ -256,12 +257,98 @@ function UserTools({
   canBreakGlass: boolean;
 }) {
   const [userId, setUserId] = useState('');
+  const [selectedHandle, setSelectedHandle] = useState<string | null>(null);
   const [reason, setReason] = useState('');
   const [glass, setGlass] = useState<string | null>(null);
   const [acting, setActing] = useState(false);
 
+  const [search, setSearch] = useState('');
+  const [roster, setRoster] = useState<AdminUser[]>([]);
+  const [rosterLoading, setRosterLoading] = useState(true);
+  const [rosterError, setRosterError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setRosterLoading(true);
+    const timer = window.setTimeout(() => {
+      void listUsers({ search: search.trim() || undefined })
+        .then((rows) => {
+          if (!cancelled) setRoster(rows);
+        })
+        .catch((err) => {
+          if (!cancelled) setRosterError(err instanceof ApiError ? err.message : 'Couldn’t load users.');
+        })
+        .finally(() => {
+          if (!cancelled) setRosterLoading(false);
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [search]);
+
+  function selectUser(u: AdminUser) {
+    setUserId(u.id);
+    setSelectedHandle(u.username);
+    setGlass(null);
+  }
+
   return (
     <div className="flex flex-col gap-3">
+      <Panel className="p-5">
+        <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.16em] text-mist">
+          People {roster.length ? `(${roster.length})` : ''}
+        </p>
+        <FieldGroup>
+          <Field
+            label="Search by handle"
+            name="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Type a handle…"
+          />
+        </FieldGroup>
+        {rosterError ? (
+          <p className="mt-2 text-[12px] text-danger">{rosterError}</p>
+        ) : rosterLoading ? (
+          <p className="mt-3 text-center text-[13px] text-mist">Loading…</p>
+        ) : roster.length === 0 ? (
+          <p className="mt-3 text-center text-[13px] text-mist">No users found.</p>
+        ) : (
+          <div className="mt-3 flex max-h-80 flex-col gap-1.5 overflow-y-auto">
+            {roster.map((u) => (
+              <button
+                key={u.id}
+                type="button"
+                onClick={() => selectUser(u)}
+                className={
+                  userId === u.id
+                    ? 'rounded-xl border border-brass/60 bg-surface-2 px-3.5 py-2.5 text-left'
+                    : 'rounded-xl border border-line px-3.5 py-2.5 text-left hover:border-mist/40'
+                }
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-[14px] text-cream">{u.username}</span>
+                  <span className="shrink-0 text-[11px] uppercase tracking-[0.1em] text-mist">
+                    {u.role}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[12px] text-mist">
+                  {u.status} · {formatWhen(u.createdAt)}
+                </p>
+              </button>
+            ))}
+          </div>
+        )}
+      </Panel>
+
+      {selectedHandle ? (
+        <p className="px-1 text-[13px] text-mist">
+          Selected: <span className="text-cream">{selectedHandle}</span>
+        </p>
+      ) : null}
+
       {canSuspend ? (
         <Panel className="p-5">
           <FieldGroup>

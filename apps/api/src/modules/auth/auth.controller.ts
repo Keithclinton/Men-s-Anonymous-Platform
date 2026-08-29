@@ -7,8 +7,10 @@ import { RefreshDto } from './dto/refresh.dto';
 import { SignupDto } from './dto/signup.dto';
 
 // Tighter than the global 100/min default — these are exactly the routes brute-force
-// attempts target, so they get a dedicated, stricter ceiling.
-const AUTH_THROTTLE = { default: { limit: 5, ttl: 60_000 } };
+// attempts target, so they get a dedicated, stricter ceiling. 20/min still blocks a real
+// brute-force attempt (that needs thousands of guesses) while giving a human tester room
+// to retype a password or handle a few times without getting locked out.
+const AUTH_THROTTLE = { default: { limit: 20, ttl: 60_000 } };
 
 @Controller('auth')
 export class AuthController {

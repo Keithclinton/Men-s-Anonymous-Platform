@@ -1,5 +1,25 @@
 import { request } from './client';
-import type { AuditLogEntry, PendingVerification, VerificationDetail } from './types';
+import type { AdminUser, AuditLogEntry, PendingVerification, StaffRole, UserRole, VerificationDetail } from './types';
+
+export function listUsers(filters?: {
+  search?: string;
+  role?: UserRole;
+  status?: string;
+}): Promise<AdminUser[]> {
+  const params = new URLSearchParams();
+  if (filters?.search) params.set('search', filters.search);
+  if (filters?.role) params.set('role', filters.role);
+  if (filters?.status) params.set('status', filters.status);
+  const query = params.toString() ? `?${params.toString()}` : '';
+  return request<AdminUser[]>(`/admin/users${query}`);
+}
+
+export function assignStaffRole(userId: string, staffRole: StaffRole | null): Promise<unknown> {
+  return request(`/admin/users/${userId}/staff-role`, {
+    method: 'POST',
+    body: JSON.stringify({ staffRole }),
+  });
+}
 
 export function listPendingVerifications(): Promise<PendingVerification[]> {
   return request<PendingVerification[]>('/admin/verifications');

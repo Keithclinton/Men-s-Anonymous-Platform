@@ -38,13 +38,20 @@ export function RegisterPage() {
   const isProvider = role === 'PROVIDER';
 
   const usernameErr = usernameError(username);
+  // Optional for providers — only validated (format/length) if they actually typed one.
+  const providerHandleErr = isProvider ? (username.trim() ? usernameError(username) : null) : null;
   const passwordErr = passwordError(password);
   const confirmErr = confirm !== password ? 'Passwords don’t match.' : null;
   const emailErr = emailError(email);
   const phoneErr = phoneError(phone);
 
   const step1Valid = isProvider
-    ? !emailErr && email.trim().length > 0 && !passwordErr && !confirmErr && confirm.length > 0
+    ? !emailErr &&
+      email.trim().length > 0 &&
+      !providerHandleErr &&
+      !passwordErr &&
+      !confirmErr &&
+      confirm.length > 0
     : !usernameErr && !passwordErr && !confirmErr && confirm.length > 0;
 
   function markTouched(...keys: string[]) {
@@ -79,7 +86,7 @@ export function RegisterPage() {
     setSubmitting(true);
     try {
       await signUp({
-        username: isProvider ? undefined : username.trim(),
+        username: isProvider ? username.trim() || undefined : username.trim(),
         password,
         role,
         email: isProvider
@@ -94,7 +101,7 @@ export function RegisterPage() {
     } catch (err) {
       if (err instanceof ApiError && err.isConflict) {
         setStep(1);
-        setError(isProvider ? 'An account with that email already exists.' : 'That handle is taken. Try another.');
+        setError(isProvider ? err.message : 'That handle is taken. Try another.');
       } else if (err instanceof ApiError) {
         setError(err.message);
       } else {
@@ -193,18 +200,34 @@ export function RegisterPage() {
 
             <FieldGroup>
               {isProvider ? (
-                <Field
-                  label="Email"
-                  name="email"
-                  type="email"
-                  inputMode="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  onBlur={() => markTouched('email')}
-                  placeholder="you@example.com"
-                  error={touched.email ? emailErr : null}
-                />
+                <>
+                  <Field
+                    label="Email"
+                    name="email"
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    onBlur={() => markTouched('email')}
+                    placeholder="you@example.com"
+                    error={touched.email ? emailErr : null}
+                  />
+                  <Field
+                    label="Handle"
+                    name="username"
+                    autoComplete="username"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    onBlur={() => markTouched('username')}
+                    placeholder="Optional — for your admin/internal record"
+                    hint="You still always sign in with email above. This is just how you're shown internally."
+                    error={touched.username ? providerHandleErr : null}
+                  />
+                </>
               ) : (
                 <Field
                   label="Handle"

@@ -163,6 +163,32 @@ export class IdentityVaultService {
     }));
   }
 
+  /** A provider checking their own onboarding progress — never decrypts the license number. */
+  async getMyVerificationStatus(
+    pseudonymId: string,
+    ctx: VaultAccessContext,
+  ): Promise<{
+    status: 'NOT_SUBMITTED' | 'PENDING' | 'APPROVED' | 'REJECTED';
+    submittedAt: Date | null;
+    decisionAt: Date | null;
+    verifyingBody: string | null;
+  }> {
+    const record = await this.vault.providerVerification.findFirst({
+      where: { pseudonymId },
+      orderBy: { createdAt: 'desc' },
+    });
+    await this.logAccess('CHECK_OWN_VERIFICATION_STATUS', pseudonymId, ctx);
+    if (!record) {
+      return { status: 'NOT_SUBMITTED', submittedAt: null, decisionAt: null, verifyingBody: null };
+    }
+    return {
+      status: record.decision,
+      submittedAt: record.createdAt,
+      decisionAt: record.decisionAt,
+      verifyingBody: record.verifyingBody,
+    };
+  }
+
   /** Full detail, license number decrypted — a reviewer actually confirming credentials. */
   async getVerificationDetail(id: string, ctx: VaultAccessContext): Promise<VerificationDetail | null> {
     const record = await this.vault.providerVerification.findUnique({ where: { id } });

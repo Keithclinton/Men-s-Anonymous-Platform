@@ -59,6 +59,12 @@ export class ProvidersController {
   }
 
   @Roles(Role.PROVIDER)
+  @Get('me/verification')
+  getMyVerificationStatus(@CurrentUser() user: AuthenticatedUser) {
+    return this.providers.getMyVerificationStatus(user.userId);
+  }
+
+  @Roles(Role.PROVIDER)
   @Post('me/slots')
   createSlot(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateSlotDto) {
     return this.providers.createSlot(user.userId, dto);

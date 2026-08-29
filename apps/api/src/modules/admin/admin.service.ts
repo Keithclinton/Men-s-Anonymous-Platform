@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { CorePrismaService } from '../../common/prisma/core-prisma.service';
+import { Role, UserStatus } from '../../generated/prisma-core';
 import { AuditService } from '../audit/audit.service';
 import { IdentityVaultService } from '../identity-vault/identity-vault.service';
 
@@ -44,6 +45,25 @@ export class AdminService {
       target: result.pseudonymId,
     });
     return result;
+  }
+
+  /**
+   * The roster People tools (suspend/reinstate/break-glass) need to look someone up by
+   * instead of being handed a raw UUID to paste. `search` matches the handle only — never
+   * email, which stays vault-only even for admins browsing this list.
+   */
+  async listUsers(params: { search?: string; role?: Role; status?: UserStatus; take?: number }) {
+    const take = Math.min(params.take ?? 50, 200);
+    return this.prisma.user.findMany({
+      where: {
+        ...(params.search ? { username: { contains: params.search, mode: 'insensitive' } } : {}),
+        ...(params.role ? { role: params.role } : {}),
+        ...(params.status ? { status: params.status } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take,
+      select: { id: true, username: true, role: true, staffRole: true, status: true, createdAt: true },
+    });
   }
 
   async suspendUser(userId: string, adminId: string) {

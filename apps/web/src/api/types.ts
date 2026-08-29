@@ -244,6 +244,22 @@ export interface ResourceItem {
   createdAt: string;
 }
 
+export interface AdminUser {
+  id: string;
+  username: string;
+  role: UserRole;
+  staffRole: StaffRole | null;
+  status: UserStatus;
+  createdAt: string;
+}
+
+export interface MyVerificationStatus {
+  status: 'NOT_SUBMITTED' | 'PENDING' | 'APPROVED' | 'REJECTED';
+  submittedAt: string | null;
+  decisionAt: string | null;
+  verifyingBody: string | null;
+}
+
 export interface PendingVerification {
   id: string;
   pseudonymId: string;

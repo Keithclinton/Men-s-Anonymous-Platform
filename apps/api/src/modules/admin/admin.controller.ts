@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { AuthenticatedUser, CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { StaffRoles } from '../../common/decorators/staff-roles.decorator';
-import { Role } from '../../generated/prisma-core';
+import { Role, UserStatus } from '../../generated/prisma-core';
 import { AdminService } from './admin.service';
 import { AssignStaffRoleDto } from './dto/assign-staff-role.dto';
 import { BreakGlassDto } from './dto/break-glass.dto';
@@ -37,6 +37,17 @@ export class AdminController {
     @Body() dto: DecideVerificationDto,
   ) {
     return this.admin.decideVerification(id, dto.decision, user.userId);
+  }
+
+  @StaffRoles('SUPPORT_AGENT', 'STAFF_MODERATOR', 'COMPLIANCE_OFFICER')
+  @Get('users')
+  listUsers(
+    @Query('search') search?: string,
+    @Query('role') role?: Role,
+    @Query('status') status?: UserStatus,
+    @Query('take') take?: string,
+  ) {
+    return this.admin.listUsers({ search, role, status, take: take ? Number(take) : undefined });
   }
 
   @StaffRoles('SUPPORT_AGENT', 'STAFF_MODERATOR')

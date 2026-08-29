@@ -1,5 +1,5 @@
 import { request } from './client';
-import type { AvailabilitySlot, ProviderKind, ProviderProfile } from './types';
+import type { AvailabilitySlot, MyVerificationStatus, ProviderKind, ProviderProfile } from './types';
 
 export function listProviders(filters?: {
   specialty?: string;
@@ -48,6 +48,10 @@ export function submitVerification(body: {
     method: 'POST',
     body: JSON.stringify(body),
   });
+}
+
+export function getMyVerificationStatus(): Promise<MyVerificationStatus> {
+  return request<MyVerificationStatus>('/providers/me/verification');
 }
 
 export function publishProfile(body: {

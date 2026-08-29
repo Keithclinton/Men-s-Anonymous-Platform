@@ -8,6 +8,7 @@ import { acceptMatch, declineMatch } from '../api/matching';
 import {
   createSlot,
   deleteSlot,
+  getMyVerificationStatus,
   listMySlots,
   publishProfile,
   submitVerification,
@@ -18,6 +19,7 @@ import type {
   AvailabilitySlot,
   Booking,
   Feedback,
+  MyVerificationStatus,
   ProviderEarnings,
   ProviderKind,
   ProviderProfile,
@@ -38,6 +40,7 @@ import {
   formatWhen,
   localInputToIso,
   revealLevelLabel,
+  verificationStatusLabel,
 } from '../lib/format';
 
 type DeskTab = 'requests' | 'calendar' | 'earnings' | 'profile' | 'verify' | 'reveals' | 'feedback';
@@ -451,6 +454,17 @@ function VerifyForm({
   const [licenseNumber, setLicenseNumber] = useState('');
   const [verifyingBody, setVerifyingBody] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [status, setStatus] = useState<MyVerificationStatus | null>(null);
+  const [statusLoading, setStatusLoading] = useState(true);
+
+  async function refreshStatus() {
+    setStatus(await getMyVerificationStatus());
+  }
+
+  useEffect(() => {
+    setStatusLoading(true);
+    void refreshStatus().finally(() => setStatusLoading(false));
+  }, []);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -460,6 +474,7 @@ function VerifyForm({
         licenseNumber: licenseNumber.trim(),
         verifyingBody: verifyingBody.trim() || undefined,
       });
+      await refreshStatus();
       onDone(result.id);
     } catch (err) {
       onError(err instanceof ApiError ? err.message : 'Verification submit failed.');
@@ -470,6 +485,15 @@ function VerifyForm({
 
   return (
     <Panel className="p-5">
+      {!statusLoading && status ? (
+        <div className="mb-4 rounded-xl border border-line px-3.5 py-3">
+          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-mist">Status</p>
+          <p className="mt-1 text-[15px] text-cream">{verificationStatusLabel(status.status)}</p>
+          {status.verifyingBody ? (
+            <p className="mt-1 text-[12px] text-mist">{status.verifyingBody}</p>
+          ) : null}
+        </div>
+      ) : null}
       <p className="text-[13px] leading-5 text-mist">
         Submit credentials for admin review. You can’t publish a public profile until approved.
       </p>

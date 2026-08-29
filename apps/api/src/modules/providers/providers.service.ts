@@ -32,6 +32,14 @@ export class ProvidersService {
     );
   }
 
+  /** So a provider isn't left guessing after the one-line "submitted" toast — ARCHITECTURE.md §10a. */
+  async getMyVerificationStatus(userId: string) {
+    return this.vault.getMyVerificationStatus(userId, {
+      actorPseudonym: userId,
+      reason: 'check_own_verification_status',
+    });
+  }
+
   /** Onboarding step 4 — only reachable once a compliance officer has approved §10a step 3. */
   async publishProfile(userId: string, dto: UpsertProfileDto) {
     const verified = await this.vault.isVerified(userId, {

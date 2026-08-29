@@ -29,6 +29,20 @@ Get a token pair from `POST /auth/signup` or `POST /auth/login`:
 }
 ```
 
+**Login and signup bodies differ by role — CLIENT uses a handle, PROVIDER uses email:**
+
+- **CLIENT** (default role): `{ "username": "quietoak42", "password": "..." }`. Providers aren't anonymous the way clients are (ARCHITECTURE.md §3), so this handle is a genuine pseudonym — it's what the whole app calls the person, and login is by handle only.
+- **PROVIDER**: `{ "role": "PROVIDER", "email": "you@example.com", "password": "..." }`. Email is **required** on signup (400 `"A valid email is required to register as a provider..."` if missing/invalid) and is always the login identifier — a `username` sent alongside it is optional and only used as an internal/admin-facing display label, never for login. Stored encrypted in the vault, looked up via a deterministic hash, never returned in plaintext by any endpoint except `GET /users/me` for the owning provider themselves.
+- **ADMIN**: exactly one of the two above at signup (there's no self-service ADMIN role) — an existing account gets promoted directly in the database, same for the `staffRole` sub-scope (ARCHITECTURE.md §9a) unless assigned via `POST /admin/users/:userId/staff-role` by a `SUPER_ADMIN`.
+
+Login always sends **exactly one** of `username`/`email` (whichever the account was created with) — never both:
+
+```
+POST /auth/login
+{ "username": "quietoak42", "password": "..." }        // CLIENT
+{ "email": "you@example.com", "password": "..." }       // PROVIDER / ADMIN-via-provider
+```
+
 Access tokens expire in 15 minutes by default (`JWT_ACCESS_TTL`), refresh tokens in 30 days (`JWT_REFRESH_TTL`) — both configurable on the backend. On a 401 from an expired access token:
 
 ```
@@ -73,7 +87,7 @@ Safe generic handler: `Array.isArray(body.message) ? body.message.join(', ') : b
 **Other conventions**
 - IDs are UUID strings; dates are ISO-8601 strings; money is a plain number in **KES major units** (`500` = KSh 500, not cents).
 - Request bodies are validated strictly — unknown fields are **rejected** (400), not dropped.
-- Rate limits: 100 req/min per IP by default; `/auth/*` and the M-Pesa pay endpoint are limited to 3–5 req/min — expect 429s if you're hammering them in a test loop.
+- Rate limits: 100 req/min per IP by default; `/auth/*` is limited to 20 req/min, the M-Pesa pay/payout/subscription endpoints to 3 req/min — expect 429s if you're hammering them in a test loop.
 - `createdAt`/`updatedAt` are present on most records even where omitted from the shapes below.
 
 ---

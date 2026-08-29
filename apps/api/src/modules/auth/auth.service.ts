@@ -33,9 +33,10 @@ export class AuthService {
   async signup(dto: SignupDto): Promise<TokenPair> {
     const role = dto.role ?? 'CLIENT';
 
-    // PROVIDER accounts aren't anonymous — they sign in with their real email instead of a
-    // handle, so the User row gets an opaque generated username nobody ever sees or types.
-    // See ARCHITECTURE.md §3 and identity-vault.service.ts#findPseudonymByEmail.
+    // PROVIDER accounts aren't anonymous — they always sign in with their real email, never
+    // a handle. See ARCHITECTURE.md §3 and identity-vault.service.ts#findPseudonymByEmail.
+    // `username` here is purely a display convenience (admin roster, etc.): if they chose
+    // one, we keep it; otherwise the row gets an opaque generated one nobody ever types.
     if (role === 'PROVIDER') {
       const existingPseudonym = await this.vault.findPseudonymByEmail(dto.email as string, {
         actorPseudonym: 'system',
@@ -45,9 +46,18 @@ export class AuthService {
         throw new ConflictException('An account with that email already exists');
       }
 
+      if (dto.username) {
+        const existingHandle = await this.prisma.user.findUnique({
+          where: { username: dto.username },
+        });
+        if (existingHandle) {
+          throw new ConflictException('That handle is taken');
+        }
+      }
+
       const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
       const user = await this.prisma.user.create({
-        data: { username: `provider_${randomUUID()}`, passwordHash, role },
+        data: { username: dto.username ?? `provider_${randomUUID()}`, passwordHash, role },
       });
 
       await this.vault.createIdentity(
