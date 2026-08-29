@@ -61,7 +61,10 @@ export function AuthLayout({
           {aside ?? <DefaultAside />}
         </aside>
 
-        <main className="px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-5 xl:flex xl:items-center xl:justify-center xl:px-10 xl:py-10">
+        <main
+          id="main-content"
+          className="px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-5 xl:flex xl:items-center xl:justify-center xl:px-10 xl:py-10"
+        >
           <div className="mx-auto w-full max-w-md">
             {kicker ? (
               <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-sage">{kicker}</p>

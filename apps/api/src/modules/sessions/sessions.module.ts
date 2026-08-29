@@ -4,6 +4,7 @@ import { BookingModule } from '../booking/booking.module';
 import { DailyGateway } from './gateways/daily.gateway';
 import { MockVideoGateway } from './gateways/mock-video.gateway';
 import { VIDEO_GATEWAY } from './gateways/video-gateway.interface';
+import { SessionMessagesService } from './session-messages.service';
 import { SessionsController } from './sessions.controller';
 import { SessionsService } from './sessions.service';
 
@@ -14,6 +15,7 @@ const logger = new Logger('SessionsModule');
   controllers: [SessionsController],
   providers: [
     SessionsService,
+    SessionMessagesService,
     DailyGateway,
     MockVideoGateway,
     // Auto-selects on DAILY_API_KEY's presence, no separate mode flag needed — the moment a

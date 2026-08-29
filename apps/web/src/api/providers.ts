@@ -38,6 +38,14 @@ export function deleteSlot(slotId: string): Promise<{ deleted: boolean }> {
   return request<{ deleted: boolean }>(`/providers/me/slots/${slotId}`, { method: 'DELETE' });
 }
 
+export function getMyVerification(): Promise<{
+  id?: string;
+  status: string;
+  licenseNumber?: string | null;
+}> {
+  return request('/providers/me/verification');
+}
+
 export function submitVerification(body: {
   licenseNumber: string;
   verifyingBody?: string;

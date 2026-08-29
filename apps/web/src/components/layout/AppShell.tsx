@@ -1,111 +1,142 @@
-import type { ReactNode } from 'react';
-import { NavLink } from 'react-router-dom';
-import { Atmosphere } from './Atmosphere';
-import { Chrome } from './Chrome';
+import { useEffect, useState, type ReactNode } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../../auth/useAuth';
 import { cn } from '../../lib/cn';
-
-type NavItem = { to: string; label: string; end?: boolean };
-
-const clientNav: NavItem[] = [
-  { to: '/home', label: 'Home', end: true },
-  { to: '/providers', label: 'Find' },
-  { to: '/bookings', label: 'Sessions' },
-  { to: '/library', label: 'More' },
-];
-
-const providerNav: NavItem[] = [
-  { to: '/home', label: 'Home', end: true },
-  { to: '/provider', label: 'Desk' },
-  { to: '/bookings', label: 'Requests' },
-];
-
-const adminNav: NavItem[] = [
-  { to: '/home', label: 'Home', end: true },
-  { to: '/admin', label: 'Admin' },
-  { to: '/library', label: 'Content' },
-];
+import { AccountMenu } from './AccountMenu';
+import { Atmosphere } from './Atmosphere';
+import { Chrome } from './Chrome';
+import { LangToggle } from './LangToggle';
+import { NotificationBell } from './NotificationBell';
+import { Sidebar } from './Sidebar';
+import { MenuIcon } from '../icons';
 
 export function AppShell({
   children,
   backTo,
   backLabel,
   title,
+  eyebrow,
+  subtitle,
 }: {
   children: ReactNode;
   backTo?: string;
   backLabel?: string;
   title?: string;
+  eyebrow?: string;
+  subtitle?: string;
 }) {
   const { signOut, user } = useAuth();
-  const nav =
-    user?.role === 'ADMIN' ? adminNav : user?.role === 'PROVIDER' ? providerNav : clientNav;
+  const location = useLocation();
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const showNav = Boolean(user);
+
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') setDrawerOpen(false);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [drawerOpen]);
 
   return (
     <div className="relative min-h-dvh">
       <Atmosphere />
-      <Chrome
-        backTo={backTo}
-        backLabel={backLabel}
-        trailing={
+
+      {showNav && user ? (
+        <aside className="sidebar-panel fixed inset-y-0 left-0 z-30 hidden w-[17.25rem] flex-col px-4 py-5 md:flex">
+          <Sidebar user={user} onSignOut={signOut} />
+        </aside>
+      ) : null}
+
+      {showNav && user && drawerOpen ? (
+        <div className="fixed inset-0 z-40 md:hidden">
           <button
             type="button"
-            onClick={signOut}
-            className="inline-flex min-h-10 items-center rounded-full px-3 text-[14px] text-mist transition hover:text-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass/70"
-          >
-            Sign out
-          </button>
-        }
-      />
-
-      {title ? (
-        <div className="relative px-4 pt-4 xl:px-8">
-          <h1 className="font-display text-[1.65rem] tracking-tight text-cream">{title}</h1>
+            aria-label="Close menu"
+            className="absolute inset-0 bg-ink/70 backdrop-blur-sm"
+            onClick={() => setDrawerOpen(false)}
+          />
+          <aside className="sidebar-panel relative flex h-full w-[min(19rem,88vw)] flex-col px-4 py-5 shadow-[20px_0_80px_rgba(0,0,0,0.45)]">
+            <Sidebar
+              user={user}
+              onSignOut={signOut}
+              onNavigate={() => setDrawerOpen(false)}
+              onClose={() => setDrawerOpen(false)}
+            />
+          </aside>
         </div>
       ) : null}
 
-      <div
-        className={cn(
-          'relative mx-auto w-full max-w-lg px-4 pt-4 xl:max-w-3xl xl:px-8',
-          showNav
-            ? 'pb-[max(5.5rem,env(safe-area-inset-bottom)+4rem)]'
-            : 'pb-[max(1.5rem,env(safe-area-inset-bottom))]',
-        )}
-      >
-        {children}
-      </div>
+      <div className={cn(showNav && 'md:pl-[17.25rem]')}>
+        <div className={cn(showNav && !backTo && 'md:hidden')}>
+          <Chrome
+            backTo={backTo}
+            backLabel={backLabel}
+            markTo={user ? '/home' : '/'}
+            hideMarkOnDesktop={showNav}
+            leading={
+              showNav ? (
+                <button
+                  type="button"
+                  aria-label="Open menu"
+                  aria-expanded={drawerOpen}
+                  onClick={() => setDrawerOpen(true)}
+                  className="inline-flex size-10 items-center justify-center rounded-full border border-line/80 bg-surface/50 text-cream transition hover:border-mist/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass/70 md:hidden"
+                >
+                  <MenuIcon className="size-5" />
+                </button>
+              ) : null
+            }
+            trailing={
+              user ? (
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <LangToggle />
+                  <NotificationBell />
+                  <AccountMenu user={user} onSignOut={signOut} variant="header" />
+                </div>
+              ) : null
+            }
+          />
+        </div>
 
-      {showNav ? (
-        <nav
-          aria-label="Primary"
-          className="fixed inset-x-0 bottom-0 z-30 border-t border-line/50 bg-ink/90 backdrop-blur-md pb-[max(0.5rem,env(safe-area-inset-bottom))]"
-        >
-          <ul
+        {title ? (
+          <div
             className={cn(
-              'mx-auto grid max-w-lg px-2',
-              nav.length === 4 ? 'grid-cols-4' : 'grid-cols-3',
+              'relative mx-auto w-full max-w-6xl px-4 pt-6 md:px-8 lg:px-10',
+              showNav && !backTo && 'md:pt-10',
             )}
           >
-            {nav.map((item) => (
-              <li key={item.to}>
-                <NavLink
-                  to={item.to}
-                  end={item.end}
-                  className={({ isActive }) =>
-                    cn(
-                      'flex min-h-12 items-center justify-center text-[13px] font-medium tracking-wide',
-                      isActive ? 'text-brass' : 'text-mist hover:text-cream',
-                    )
-                  }
-                >
-                  {item.label}
-                </NavLink>
-              </li>
-            ))}
-          </ul>
-        </nav>
-      ) : null}
+            {eyebrow ? (
+              <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-sage">{eyebrow}</p>
+            ) : null}
+            <h1 className="mt-1 font-display text-[1.75rem] tracking-tight text-cream md:text-[2rem]">{title}</h1>
+            {subtitle ? (
+              <p className="mt-2 max-w-[52ch] text-[14px] leading-6 text-mist md:text-[15px]">{subtitle}</p>
+            ) : null}
+          </div>
+        ) : null}
+
+        <main
+          id="main-content"
+          className={cn(
+            'relative mx-auto w-full max-w-6xl px-4 pt-4 md:px-8 md:pt-6 lg:px-10',
+            'pb-[max(1.75rem,env(safe-area-inset-bottom))] md:pb-14',
+            showNav && !backTo && !title && 'md:pt-10',
+          )}
+        >
+          {children}
+        </main>
+      </div>
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { getMe } from '../api/users';
 import type { MeResponse, SignupRequest, TokenPair } from '../api/types';
 import { tokenStore } from './tokens';
 import { AuthContext, type AuthContextValue } from './useAuth';
+import { SESSION_EXPIRED_KEY } from '../lib/prefs';
 
 function peekExpiry(token: string): number | null {
   try {
@@ -38,6 +39,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .catch(() => {
           tokenStore.clear();
           setUser(null);
+          try {
+            sessionStorage.setItem(SESSION_EXPIRED_KEY, '1');
+          } catch {
+            /* ignore */
+          }
         });
     }, delay);
   }, []);
@@ -68,7 +74,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!cancelled) setUser(me);
       } catch {
         tokenStore.clear();
-        if (!cancelled) setUser(null);
+        if (!cancelled) {
+          setUser(null);
+          try {
+            sessionStorage.setItem(SESSION_EXPIRED_KEY, '1');
+          } catch {
+            /* ignore */
+          }
+        }
       } finally {
         if (!cancelled) setReady(true);
       }
@@ -83,9 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(
     async (identifier: string, password: string, persist: boolean) => {
-      const pair = identifier.includes('@')
-        ? await authApi.login({ email: identifier, password })
-        : await authApi.login({ username: identifier, password });
+      const pair = await authApi.login(identifier, password);
       await applySession(pair, persist);
     },
     [applySession],

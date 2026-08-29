@@ -232,7 +232,7 @@ Every booking where you're client or provider, newest first.
 
 ## Sessions
 
-The chat/video session tied to a booking. `CHAT` sessions don't use anything here beyond `start`/`end` — see [Chat](#chat-websocket) for the actual messaging. `VIDEO` sessions get a real Daily.co room **once `DAILY_API_KEY` is configured on the backend** — until then `roomRef` is a harmless placeholder string (`pending-provider-room-...`), not a joinable room. Check with whoever runs the deployment which mode is live; both return the same shape either way.
+The chat/video session tied to a booking. `VIDEO` sessions get a real Daily.co room **once `DAILY_API_KEY` is configured on the backend** — until then `roomRef` is a harmless placeholder string (`pending-provider-room-...`), not a joinable room. Check with whoever runs the deployment which mode is live; both return the same shape either way.
 
 ### `POST /bookings/:bookingId/session/start` — Authenticated
 Requires booking `CONFIRMED` **and** payment `SUCCEEDED`. Idempotent. For `VIDEO`, this is where the room actually gets created.
@@ -243,21 +243,39 @@ Requires booking `CONFIRMED` **and** payment `SUCCEEDED`. Idempotent. For `VIDEO
 
 `403` not a participant · `409` booking not confirmed, or payment not succeeded yet.
 
-### `GET /bookings/:bookingId/session/join-token` — Authenticated · `VIDEO` only
-Call this right before actually joining the call — tokens are minted fresh per participant, per request, never stored. Short-lived (1 hour).
+### `GET /bookings/:bookingId/session/join` — Authenticated
+Call this right before actually joining — for `VIDEO` a fresh vendor join URL is minted per participant, per request, never stored. For `CHAT` it just confirms the room is open; the client then talks to the REST relay below (or the [Socket.IO gateway](#chat-websocket) as a real-time upgrade).
+
 ```json
-{ "token": "...", "url": "https://yourteam.daily.co/booking-...?t=...", "expiresAt": "..." }
+{ "bookingId": "uuid", "sessionId": "uuid", "channelType": "VIDEO", "token": null, "wsPath": null, "joinUrl": "https://yourteam.daily.co/booking-...?t=..." }
 ```
-`409` — session is `CHAT` (use the chat gateway instead), or the session hasn't been started yet.
+
+For `CHAT`, `joinUrl` is `null`. `409` — the session hasn't been started yet (or, for `VIDEO`, has no room yet).
+
+### `GET /bookings/:bookingId/session/messages?after=<ISO-8601>` — Authenticated
+REST chat relay — the room screen polls this every ~2.5s. `after` is optional; omit it for full history. Returns messages sorted oldest-first.
+
+```json
+[{ "id": "uuid", "bookingId": "uuid", "sessionId": "uuid", "senderId": "pseudonym-uuid", "senderHandle": "stillwater41", "body": "plain text", "createdAt": "..." }]
+```
+
+`409` — session hasn't been started yet.
+
+### `POST /bookings/:bookingId/session/messages` — Authenticated
+Body: `{ "body": "plain text, 1–2000 chars" }`. Returns the created message (same shape as above). Throttled to 30 req/min per user.
+
+`409` — not started yet, or already ended · `400` empty/oversized body.
+
+**Storage:** Redis only, keyed by `Session.id`, TTL = booking duration + 15 minutes. Message *content* is never written to Postgres or logged — same rule the Socket.IO gateway follows. The key is deleted the moment `session/end` runs, so history doesn't outlive the session.
 
 ### `POST /bookings/:bookingId/session/end` — Authenticated
-Marks the booking `COMPLETED` (unlocks feedback). Idempotent. `409` if never started.
+Marks the booking `COMPLETED` (unlocks feedback) and clears that session's message history from Redis. Idempotent. `409` if never started.
 
 ---
 
 ## Chat (WebSocket)
 
-1:1 text chat between a booking's two participants. **Separate from the REST API** — its own Vercel Function (`api/socket.ts`), its own URL. Message *content* is relayed only and never stored server-side (ARCHITECTURE.md §6) — there's no history endpoint; a client that wasn't connected when a message was sent never sees it.
+An optional real-time upgrade over the REST relay above — the deployed web client currently polls REST, not this. Same participants-only rule, same never-persisted content (ARCHITECTURE.md §6). **Separate from the REST API** — its own Vercel Function (`api/socket.ts`), its own URL. There's no history endpoint here either; a client that wasn't connected when a message was sent never sees it over the socket (poll REST for that).
 
 - **URL:** same host as the REST API (`https://<api-domain>`), **path:** `/api/socket/socket.io` — both must be set explicitly, the Socket.IO client defaults to `/socket.io`.
 - **Transport:** `transports: ['websocket']` — required. Vercel's WebSocket support doesn't do HTTP long-polling, and that's the Socket.IO client default, so leaving it unset silently breaks the connection.
@@ -468,7 +486,7 @@ Everything here requires `ADMIN`, further scoped per-endpoint by `staffRole` (AR
 4. `POST /billing/bookings/:id/pay` with phone → `PENDING`
 5. Poll `GET /billing/bookings/:id/payment-status` until `SUCCEEDED`/`FAILED`
 6. `POST /bookings/:bookingId/session/start` → succeeds, returns `roomRef`
-7. `VIDEO` only: `GET /bookings/:bookingId/session/join-token` right before joining the call. `CHAT`: connect to the [chat gateway](#chat-websocket) and `join` instead
+7. `GET /bookings/:bookingId/session/join` right before joining. `VIDEO` returns `joinUrl`; `CHAT` then polls `GET .../session/messages` (or connects to the [chat gateway](#chat-websocket) for real-time)
 8. … session happens …
 9. `POST /bookings/:bookingId/session/end` → `COMPLETED`
 10. `POST /sessions/:sessionId/feedback`

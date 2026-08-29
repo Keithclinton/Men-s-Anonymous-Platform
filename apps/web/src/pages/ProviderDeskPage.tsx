@@ -13,6 +13,7 @@ import {
   publishProfile,
   submitVerification,
   updateAvailability,
+  getMyVerification,
 } from '../api/providers';
 import { listProviderReveals } from '../api/reveals';
 import type {
@@ -26,12 +27,15 @@ import type {
   RevealGrant,
 } from '../api/types';
 import { useAuth } from '../auth/useAuth';
+import { CalendarIcon, ChatIcon, EyeIcon, PulseIcon, ShieldIcon, StarIcon, WalletIcon } from '../components/icons';
 import { AppShell } from '../components/layout/AppShell';
 import { Panel } from '../components/layout/Panel';
+import { ToolTile } from '../components/ui/ActionCard';
 import { Button } from '../components/ui/Button';
-import { Field, FieldGroup } from '../components/ui/Field';
+import { Field, FieldGroup, TextArea } from '../components/ui/Field';
 import { Notice } from '../components/ui/Notice';
 import { Segmented } from '../components/ui/Segmented';
+import { SlotCalendar } from '../components/ui/SlotCalendar';
 import {
   bookingStatusLabel,
   channelLabel,
@@ -54,6 +58,7 @@ export function ProviderDeskPage() {
   const [reveals, setReveals] = useState<RevealGrant[]>([]);
   const [slots, setSlots] = useState<AvailabilitySlot[]>([]);
   const [earnings, setEarnings] = useState<ProviderEarnings | null>(null);
+  const [verifyStatus, setVerifyStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -61,19 +66,26 @@ export function ProviderDeskPage() {
 
   const profile = user?.providerProfile ?? null;
 
+  function selectTab(next: DeskTab) {
+    setTab(next);
+    setError(null);
+  }
+
   async function refresh() {
-    const [bookings, fb, rev, openSlots, earn] = await Promise.all([
+    const [bookings, fb, rev, openSlots, earn, verify] = await Promise.all([
       listMyBookings(),
       listProviderFeedback().catch(() => [] as Feedback[]),
       listProviderReveals().catch(() => [] as RevealGrant[]),
       listMySlots().catch(() => [] as AvailabilitySlot[]),
       getProviderEarnings().catch(() => null),
+      getMyVerification().catch(() => null),
     ]);
     setRequests(bookings.filter((b) => b.status === 'REQUESTED' && b.providerId === user?.id));
     setFeedback(fb);
     setReveals(rev);
     setSlots(openSlots);
     setEarnings(earn);
+    setVerifyStatus(verify?.status ?? null);
   }
 
   useEffect(() => {
@@ -102,32 +114,62 @@ export function ProviderDeskPage() {
   }
 
   return (
-    <AppShell title="Provider desk">
-      <div className="no-scrollbar mb-4 flex gap-2 overflow-x-auto">
-        {(
-          [
-            ['requests', 'Requests'],
-            ['calendar', 'Calendar'],
-            ['earnings', 'Earnings'],
-            ['profile', 'Profile'],
-            ['verify', 'Verify'],
-            ['reveals', 'Reveals'],
-            ['feedback', 'Feedback'],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setTab(id)}
-            className={
-              tab === id
-                ? 'shrink-0 rounded-full border border-brass/60 bg-surface-2 px-3.5 py-2 text-[13px] text-cream'
-                : 'shrink-0 rounded-full border border-line px-3.5 py-2 text-[13px] text-mist'
-            }
-          >
-            {label}
-          </button>
-        ))}
+    <AppShell
+      title="Desk"
+      eyebrow="Practice"
+      subtitle="Requests, calendar, rates, verification, and earnings in one place."
+    >
+      <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7">
+        <ToolTile
+          active={tab === 'requests'}
+          label="Requests"
+          hint="Auto-match"
+          icon={<ChatIcon className="size-5" />}
+          badge={requests.length || undefined}
+          onClick={() => selectTab('requests')}
+        />
+        <ToolTile
+          active={tab === 'calendar'}
+          label="Calendar"
+          hint="Open slots"
+          icon={<CalendarIcon className="size-5" />}
+          onClick={() => selectTab('calendar')}
+        />
+        <ToolTile
+          active={tab === 'earnings'}
+          label="Earnings"
+          hint="Payouts"
+          icon={<WalletIcon className="size-5" />}
+          onClick={() => selectTab('earnings')}
+        />
+        <ToolTile
+          active={tab === 'profile'}
+          label="Profile"
+          hint="Public card"
+          icon={<ShieldIcon className="size-5" />}
+          onClick={() => selectTab('profile')}
+        />
+        <ToolTile
+          active={tab === 'verify'}
+          label="Verify"
+          hint="License"
+          icon={<PulseIcon className="size-5" />}
+          onClick={() => selectTab('verify')}
+        />
+        <ToolTile
+          active={tab === 'reveals'}
+          label="Reveals"
+          hint="Client grants"
+          icon={<EyeIcon className="size-5" />}
+          onClick={() => selectTab('reveals')}
+        />
+        <ToolTile
+          active={tab === 'feedback'}
+          label="Feedback"
+          hint="Ratings"
+          icon={<StarIcon className="size-5" />}
+          onClick={() => selectTab('feedback')}
+        />
       </div>
 
       {error ? <Notice tone="danger">{error}</Notice> : null}
@@ -135,6 +177,12 @@ export function ProviderDeskPage() {
         <div className="mb-3">
           <Notice>{notice}</Notice>
         </div>
+      ) : null}
+      {verifyStatus && verifyStatus !== 'APPROVED' ? (
+        <Panel className="mb-3 p-4">
+          <p className="text-[13px] text-cream">Verification: {verifyStatus.replaceAll('_', ' ')}</p>
+          <p className="mt-1 text-[12px] text-mist">License under review — you can’t publish until compliance approves you.</p>
+        </Panel>
       ) : null}
       {loading ? <p className="py-6 text-center text-[14px] text-mist">Loading…</p> : null}
 
@@ -228,6 +276,7 @@ export function ProviderDeskPage() {
           existing={profile}
           onSaved={async () => {
             setNotice('Profile published.');
+            setError(null);
             await refreshMe();
             await refresh();
           }}
@@ -337,6 +386,12 @@ function SlotsPanel({
           </Button>
         </form>
       </Panel>
+      {slots.length > 0 ? (
+        <Panel className="p-4">
+          <p className="mb-3 text-[11px] uppercase tracking-[0.14em] text-brass">This week</p>
+          <SlotCalendar slots={slots} />
+        </Panel>
+      ) : null}
       {slots.length === 0 ? (
         <Panel className="p-5">
           <p className="text-[14px] text-mist">No slots yet.</p>
@@ -373,6 +428,10 @@ function SlotsPanel({
   );
 }
 
+function kes(value: number | string) {
+  return formatKes(typeof value === 'number' ? value : Number(value));
+}
+
 function EarningsPanel({
   earnings,
   onDone,
@@ -384,6 +443,10 @@ function EarningsPanel({
 }) {
   const [phone, setPhone] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [month, setMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
 
   async function onPayout(event: FormEvent) {
     event.preventDefault();
@@ -406,6 +469,9 @@ function EarningsPanel({
     );
   }
 
+  const charges = earnings.recentCharges.filter((row) => row.createdAt.slice(0, 7) === month);
+  const payouts = earnings.recentPayouts.filter((row) => row.createdAt.slice(0, 7) === month);
+
   return (
     <div className="flex flex-col gap-3">
       <Panel className="p-5">
@@ -421,6 +487,51 @@ function EarningsPanel({
             <dd className="mt-1 text-cream">{formatKes(earnings.paidOut)}</dd>
           </div>
         </dl>
+      </Panel>
+      <Panel className="p-5">
+        <label className="text-[11px] uppercase tracking-[0.14em] text-brass" htmlFor="earn-month">
+          Month
+        </label>
+        <input
+          id="earn-month"
+          type="month"
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
+          className="mt-2 min-h-12 w-full rounded-2xl border border-line bg-ink/50 px-3 text-[16px] text-cream"
+        />
+        <p className="mt-4 text-[11px] uppercase tracking-[0.14em] text-sage">Charges</p>
+        {charges.length === 0 ? (
+          <p className="mt-2 text-[13px] text-mist">No charges this month.</p>
+        ) : (
+          <ul className="mt-2 divide-y divide-line/70">
+            {charges.map((row) => (
+              <li key={row.externalRef} className="flex items-center justify-between gap-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-[13px] text-cream">{kes(row.amount)}</p>
+                  <p className="truncate text-[11px] text-mist">{formatWhen(row.createdAt)}</p>
+                </div>
+                <p className="shrink-0 font-mono text-[10px] text-mist">{row.externalRef.slice(0, 8)}…</p>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="mt-4 text-[11px] uppercase tracking-[0.14em] text-sage">Payouts</p>
+        {payouts.length === 0 ? (
+          <p className="mt-2 text-[13px] text-mist">No payouts this month.</p>
+        ) : (
+          <ul className="mt-2 divide-y divide-line/70">
+            {payouts.map((row) => (
+              <li key={row.externalRef} className="flex items-center justify-between gap-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-[13px] text-cream">{kes(row.amount)}</p>
+                  <p className="truncate text-[11px] text-mist">
+                    {row.status} · {formatWhen(row.createdAt)}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </Panel>
       <Panel className="p-5">
         <p className="text-[13px] leading-5 text-mist">
@@ -596,7 +707,7 @@ function ProfileForm({
             onChange={(e) => setDisplayName(e.target.value)}
             required
           />
-          <Field label="Bio" name="bio" value={bio} onChange={(e) => setBio(e.target.value)} />
+          <TextArea label="Bio" name="bio" value={bio} onChange={(e) => setBio(e.target.value)} />
           <Field
             label="Specialties"
             name="specialties"
@@ -624,7 +735,7 @@ function ProfileForm({
             onChange={(e) => setHourlyRate(e.target.value)}
             required
           />
-          <Field
+          <TextArea
             label="Availability note"
             name="availability"
             value={availabilityNote}

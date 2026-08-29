@@ -63,6 +63,53 @@ export function verificationStatusLabel(
   }
 }
 
+export function roleHeadline(user: {
+  role: 'CLIENT' | 'PROVIDER' | 'ADMIN';
+  staffRole?: StaffRole | null;
+  providerProfile?: { kind?: ProviderKind } | null;
+}): string {
+  if (user.role === 'PROVIDER') {
+    return user.providerProfile?.kind === 'MODERATOR' ? 'Moderator' : 'Counselor';
+  }
+  if (user.role === 'ADMIN') return staffRoleLabel(user.staffRole);
+  return 'Client';
+}
+
+/** Generated seed handles are unreadable; show a human label in chrome. */
+export function publicHandle(username: string, role?: 'CLIENT' | 'PROVIDER' | 'ADMIN'): string {
+  if (/^provider_[0-9a-f-]{8,}/i.test(username)) {
+    if (role === 'ADMIN') return 'Admin';
+    if (role === 'PROVIDER') return 'Provider';
+  }
+  return username;
+}
+
+export function bookingStatusTone(status: BookingStatus): 'neutral' | 'brass' | 'sage' | 'danger' {
+  switch (status) {
+    case 'REQUESTED':
+      return 'brass';
+    case 'CONFIRMED':
+      return 'sage';
+    case 'CANCELLED':
+      return 'danger';
+    default:
+      return 'neutral';
+  }
+}
+
+export function paymentStatusTone(status: PaymentStatus): 'neutral' | 'brass' | 'sage' | 'danger' {
+  switch (status) {
+    case 'SUCCEEDED':
+      return 'sage';
+    case 'PENDING':
+      return 'brass';
+    case 'FAILED':
+      return 'danger';
+    default:
+      return 'neutral';
+  }
+}
+
 export function bookingStatusLabel(status: BookingStatus): string {
   switch (status) {
     case 'REQUESTED':

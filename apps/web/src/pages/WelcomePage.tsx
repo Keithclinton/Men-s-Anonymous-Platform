@@ -1,26 +1,37 @@
 import { Link } from 'react-router-dom';
 import { Atmosphere } from '../components/layout/Atmosphere';
 import { Chrome } from '../components/layout/Chrome';
+import { LangToggle } from '../components/layout/LangToggle';
 import { Panel } from '../components/layout/Panel';
 import { ButtonLink } from '../components/ui/Button';
+import { CrisisBanner } from '../components/safety/CrisisBanner';
+import { useLocale } from '../lib/i18n';
 
 export function WelcomePage() {
+  const { t } = useLocale();
   return (
     <div className="relative min-h-dvh">
       <Atmosphere />
       <Chrome
         trailing={
-          <Link
-            to="/login"
-            className="inline-flex min-h-10 items-center rounded-full px-3 text-[14px] text-mist transition hover:text-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass/70"
-          >
-            Sign in
-          </Link>
+          <div className="flex items-center gap-2">
+            <LangToggle />
+            <Link
+              to="/login"
+              className="inline-flex min-h-10 items-center rounded-full px-3 text-[14px] text-mist transition hover:text-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass/70"
+            >
+              Sign in
+            </Link>
+          </div>
         }
       />
+      <CrisisBanner compact />
 
-      <div className="relative xl:grid xl:min-h-[calc(100dvh-4.25rem)] xl:grid-cols-2">
-        <main className="flex min-h-[calc(100dvh-4.25rem)] flex-col px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-6 xl:justify-end xl:px-16 xl:pb-16 xl:pt-10">
+      <div className="relative xl:grid xl:min-h-[calc(100dvh-6rem)] xl:grid-cols-2">
+        <main
+          id="main-content"
+          className="flex min-h-[calc(100dvh-4.25rem)] flex-col px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-6 xl:justify-end xl:px-16 xl:pb-16 xl:pt-10"
+        >
           <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-sage">
             Anonymous support for men
           </p>
@@ -61,6 +72,14 @@ export function WelcomePage() {
           </Panel>
         </div>
       </div>
+
+      <nav className="relative flex flex-wrap justify-center gap-x-4 gap-y-2 px-5 py-6 text-[13px] text-mist">
+        <Link to="/how-it-works">{t.how}</Link>
+        <Link to="/faq">{t.faq}</Link>
+        <Link to="/for-providers">{t.forProviders}</Link>
+        <Link to="/terms">{t.terms}</Link>
+        <Link to="/privacy">{t.privacy}</Link>
+      </nav>
     </div>
   );
 }

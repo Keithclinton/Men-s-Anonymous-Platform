@@ -34,6 +34,13 @@ class TokenStore {
     if (persist) localStorage.setItem(PERSIST_KEY, '1');
   }
 
+  setPersist(persist: boolean): void {
+    const refresh = this.getRefresh();
+    const access = this.accessToken;
+    if (!refresh || !access) return;
+    this.setPair({ accessToken: access, refreshToken: refresh }, persist);
+  }
+
   clear(): void {
     this.accessToken = null;
     sessionStorage.removeItem(REFRESH_KEY);

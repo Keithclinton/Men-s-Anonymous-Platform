@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './useAuth';
+import { needsIntake } from '../lib/intake';
 
 export function ProtectedRoute({ children }: { children: ReactNode }) {
   const { user, ready } = useAuth();
@@ -8,6 +9,13 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
 
   if (!ready) return <BootScreen />;
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  if (
+    needsIntake(user.id, user.role) &&
+    location.pathname !== '/intake' &&
+    location.pathname !== '/account'
+  ) {
+    return <Navigate to="/intake" replace />;
+  }
   return children;
 }
 

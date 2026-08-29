@@ -161,17 +161,31 @@ export class BookingService {
   }
 
   async getById(bookingId: string, actorId: string) {
-    return this.requireParticipant(bookingId, actorId, {
+    // requireParticipant's include param isn't generic, so Prisma can't narrow its return
+    // type from the literal passed here — the shape below is exactly what runs at runtime.
+    const booking = (await this.requireParticipant(bookingId, actorId, {
       session: { include: { feedback: true } },
-    });
+      client: { select: { username: true } },
+    })) as Booking & { session: unknown; client: { username: string } | null };
+    return this.withClientHandle(booking);
   }
 
   async listMine(userId: string) {
-    return this.prisma.booking.findMany({
+    const rows = await this.prisma.booking.findMany({
       where: { OR: [{ clientId: userId }, { providerId: userId }] },
       orderBy: { scheduledStart: 'desc' },
-      include: { session: { include: { feedback: true } } },
+      include: {
+        session: { include: { feedback: true } },
+        client: { select: { username: true } },
+      },
     });
+    return rows.map((row) => this.withClientHandle(row));
+  }
+
+  /** Client's public handle, surfaced for the provider's room header — never vault PII. */
+  private withClientHandle<T extends { client?: { username: string } | null }>(booking: T) {
+    const { client, ...rest } = booking;
+    return { ...rest, clientHandle: client?.username ?? null };
   }
 
   private async setStatus(bookingId: string, status: BookingStatus): Promise<Booking> {

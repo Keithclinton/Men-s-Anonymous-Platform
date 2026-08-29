@@ -9,6 +9,7 @@ import { Notice } from '../components/ui/Notice';
 import { PasswordField } from '../components/ui/PasswordField';
 import { Segmented } from '../components/ui/Segmented';
 import { StepRail } from '../components/ui/StepRail';
+import { CrisisBanner } from '../components/safety/CrisisBanner';
 import { suggestHandle } from '../lib/handles';
 import {
   emailError,
@@ -31,6 +32,8 @@ export function RegisterPage() {
   const [confirm, setConfirm] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [ageOk, setAgeOk] = useState(false);
+  const [termsOk, setTermsOk] = useState(false);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -77,6 +80,10 @@ export function RegisterPage() {
       setStep(1);
       return;
     }
+    if (!ageOk || !termsOk) {
+      setError('Confirm you are 18+ and accept the terms.');
+      return;
+    }
     if (!isProvider && includeRecovery) {
       markTouched('email', 'phone');
       if (emailErr || phoneErr) return;
@@ -97,7 +104,7 @@ export function RegisterPage() {
         phone: !isProvider && includeRecovery && phone.trim() ? normalizePhone(phone) : undefined,
         persist: false,
       });
-      navigate('/home', { replace: true });
+      navigate(role === 'CLIENT' ? '/intake' : '/home', { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.isConflict) {
         setStep(1);
@@ -141,22 +148,24 @@ export function RegisterPage() {
       actions={
         step === 1 ? (
           isProvider ? (
-            <Button type="submit" form="register-form" loading={submitting}>
+            <Button type="submit" form="register-form" loading={submitting} disabled={!ageOk || !termsOk}>
               Create account
             </Button>
           ) : (
-            <Button type="submit" form="register-form">
+            <Button type="submit" form="register-form" disabled={!ageOk || !termsOk}>
               Continue
             </Button>
           )
         ) : (
           <>
-            <Button type="submit" form="register-form" loading={submitting}>
+            <Button type="submit" form="register-form" loading={submitting} disabled={role === 'PROVIDER' && !email.trim()}>
               Create account
             </Button>
-            <Button variant="secondary" loading={submitting} onClick={() => void createAccount(false)}>
-              Skip — stay handle-only
-            </Button>
+            {role === 'CLIENT' ? (
+              <Button variant="secondary" loading={submitting} onClick={() => void createAccount(false)}>
+                Skip — stay handle-only
+              </Button>
+            ) : null}
           </>
         )
       }
@@ -184,6 +193,7 @@ export function RegisterPage() {
     >
       <form id="register-form" onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
         {isProvider ? null : <StepRail step={step} steps={['Handle', 'Recovery']} />}
+        <CrisisBanner compact />
         {error ? <Notice tone="danger">{error}</Notice> : null}
 
         {step === 1 ? (
@@ -275,6 +285,34 @@ export function RegisterPage() {
                 error={touched.confirm ? confirmErr : null}
               />
             </FieldGroup>
+            <label className="flex items-start gap-3 text-[13px] leading-5 text-mist">
+              <input
+                type="checkbox"
+                className="mt-1 size-4 accent-brass"
+                checked={ageOk}
+                onChange={(e) => setAgeOk(e.target.checked)}
+              />
+              I am 18 or older.
+            </label>
+            <label className="flex items-start gap-3 text-[13px] leading-5 text-mist">
+              <input
+                type="checkbox"
+                className="mt-1 size-4 accent-brass"
+                checked={termsOk}
+                onChange={(e) => setTermsOk(e.target.checked)}
+              />
+              <span>
+                I accept the{' '}
+                <Link to="/terms" className="text-cream underline decoration-line underline-offset-4">
+                  terms
+                </Link>{' '}
+                and{' '}
+                <Link to="/privacy" className="text-cream underline decoration-line underline-offset-4">
+                  privacy
+                </Link>{' '}
+                notice. MAP is not emergency care.
+              </span>
+            </label>
           </>
         ) : (
           <FieldGroup>
@@ -287,8 +325,15 @@ export function RegisterPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               onBlur={() => markTouched('email')}
-              placeholder="Optional"
-              error={touched.email ? emailErr : null}
+              placeholder={role === 'PROVIDER' ? 'Required for providers' : 'Optional'}
+              required={role === 'PROVIDER'}
+              error={
+                touched.email
+                  ? role === 'PROVIDER' && !email.trim()
+                    ? 'Providers need a vault email on this API.'
+                    : emailErr
+                  : null
+              }
             />
             <Field
               label="Phone"
