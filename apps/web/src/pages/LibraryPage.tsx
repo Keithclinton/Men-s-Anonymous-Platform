@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ApiError } from '../api/errors';
 import {
   joinSupportGroup,
@@ -7,33 +7,41 @@ import {
   listMySupportGroups,
   listSupportGroups,
 } from '../api/groups';
-import { getResource, listResources } from '../api/resources';
-import type { ResourceItem, SupportGroup, SupportGroupMembership } from '../api/types';
+import type { ResourceItem, ResourceType, SupportGroup, SupportGroupMembership } from '../api/types';
 import { useAuth } from '../auth/useAuth';
+import { ResourceReader } from '../components/library/ResourceReader';
 import { AppShell } from '../components/layout/AppShell';
 import { Panel } from '../components/layout/Panel';
 import { Button } from '../components/ui/Button';
 import { Chip } from '../components/ui/Chip';
+import { Field } from '../components/ui/Field';
 import { Notice } from '../components/ui/Notice';
 import { formatWhen } from '../lib/format';
+import { loadPublicResources, loadResource, matchesResourceQuery } from '../lib/resources';
 
 export function LibraryPage() {
+  const { resourceId } = useParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
-  const [tab, setTab] = useState<'groups' | 'resources'>('groups');
+  const [tab, setTab] = useState<'groups' | 'resources'>(resourceId ? 'resources' : 'groups');
   const [groups, setGroups] = useState<SupportGroup[]>([]);
   const [mine, setMine] = useState<SupportGroupMembership[]>([]);
   const [resources, setResources] = useState<ResourceItem[]>([]);
   const [selected, setSelected] = useState<ResourceItem | null>(null);
+  const [query, setQuery] = useState('');
+  const [tag, setTag] = useState<string | null>(null);
+  const [kind, setKind] = useState<'ALL' | ResourceType>('ALL');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
   const canJoin = user?.role === 'CLIENT';
+  const isAdmin = user?.role === 'ADMIN';
 
   async function refresh() {
     const [g, m, r] = await Promise.all([
       listSupportGroups(),
       canJoin ? listMySupportGroups().catch(() => [] as SupportGroupMembership[]) : Promise.resolve([]),
-      listResources(),
+      loadPublicResources(),
     ]);
     setGroups(g);
     setMine(m);
@@ -56,15 +64,58 @@ export function LibraryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canJoin]);
 
-  const mineIds = new Set(mine.map((m) => m.groupId));
+  useEffect(() => {
+    if (!resourceId) {
+      setSelected(null);
+      return;
+    }
+    setTab('resources');
+    let cancelled = false;
+    void loadResource(resourceId)
+      .then((item) => {
+        if (cancelled) return;
+        if (!item || (!item.published && !isAdmin)) {
+          setSelected(null);
+          setError('That resource isn’t published.');
+          return;
+        }
+        setError(null);
+        setSelected(item);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof ApiError ? err.message : 'Couldn’t open.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [resourceId, isAdmin]);
+
+  const mineIds = new Set(mine.map((row) => row.groupId));
+  const tags = useMemo(() => {
+    const set = new Set<string>();
+    for (const row of resources) {
+      for (const item of row.tags) set.add(item);
+    }
+    return [...set].sort();
+  }, [resources]);
+
+  const visible = useMemo(() => {
+    return resources.filter((row) => {
+      if (kind !== 'ALL' && row.type !== kind) return false;
+      if (tag && !row.tags.includes(tag)) return false;
+      return matchesResourceQuery(row, query);
+    });
+  }, [resources, kind, tag, query]);
 
   return (
     <AppShell
       title="Library"
       eyebrow="For members"
       subtitle="Support groups and published reads. Join only as a client; everyone can browse."
+      backTo={resourceId ? '/library' : undefined}
+      backLabel="Library"
     >
-      {user?.role === 'CLIENT' ? (
+      {user?.role === 'CLIENT' && !resourceId ? (
         <Panel className="mb-5 flex items-center justify-between gap-3 p-5">
           <div>
             <p className="text-[13px] text-cream">Session packs</p>
@@ -77,10 +128,11 @@ export function LibraryPage() {
             View plans
           </Link>
         </Panel>
-      ) : user?.role === 'ADMIN' ? (
+      ) : null}
+      {isAdmin && !resourceId ? (
         <Panel className="mb-5 p-5">
           <p className="text-[13px] text-mist">
-            This is the public library. Publish new groups and articles from Console → Publish.
+            This is the public library. Draft, edit, unpublish, and delete from Console → Publish.
           </p>
           <Link
             to="/admin"
@@ -91,30 +143,32 @@ export function LibraryPage() {
         </Panel>
       ) : null}
 
-      <div className="mb-5 flex gap-2">
-        {(
-          [
-            ['groups', 'Groups'],
-            ['resources', 'Resources'],
-          ] as const
-        ).map(([id, label]) => (
-          <Chip
-            key={id}
-            active={tab === id}
-            onClick={() => {
-              setTab(id);
-              setSelected(null);
-            }}
-          >
-            {label}
-          </Chip>
-        ))}
-      </div>
+      {!resourceId ? (
+        <div className="mb-5 flex gap-2">
+          {(
+            [
+              ['groups', 'Groups'],
+              ['resources', 'Resources'],
+            ] as const
+          ).map(([id, label]) => (
+            <Chip
+              key={id}
+              active={tab === id}
+              onClick={() => {
+                setTab(id);
+                setError(null);
+              }}
+            >
+              {label}
+            </Chip>
+          ))}
+        </div>
+      ) : null}
 
       {error ? <Notice tone="danger">{error}</Notice> : null}
-      {loading ? <p className="py-8 text-center text-[14px] text-mist">Loading…</p> : null}
+      {loading && !resourceId ? <p className="py-8 text-center text-[14px] text-mist">Loading…</p> : null}
 
-      {tab === 'groups' && !loading ? (
+      {tab === 'groups' && !loading && !resourceId ? (
         <div className="grid gap-3 sm:grid-cols-2">
           {groups.length === 0 ? (
             <Panel className="p-6 sm:col-span-2">
@@ -155,61 +209,68 @@ export function LibraryPage() {
         </div>
       ) : null}
 
-      {tab === 'resources' && !loading ? (
-        selected ? (
-          <Panel className="max-w-3xl p-6 lg:p-8">
-            <button
-              type="button"
-              className="text-[13px] text-mist hover:text-cream"
-              onClick={() => setSelected(null)}
-            >
-              ← Back
-            </button>
-            <p className="mt-3 text-[11px] uppercase tracking-[0.14em] text-sage">{selected.type}</p>
-            <h2 className="mt-2 font-display text-2xl text-cream">{selected.title}</h2>
-            {selected.body ? (
-              <p className="mt-4 whitespace-pre-wrap text-[15px] leading-7 text-mist">{selected.body}</p>
-            ) : null}
-            {selected.url ? (
-              <a
-                href={selected.url}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-4 inline-block text-[14px] text-brass underline"
-              >
-                Open link
-              </a>
-            ) : null}
+      {tab === 'resources' && resourceId && !selected && !error ? (
+        <p className="py-8 text-center text-[14px] text-mist">Opening…</p>
+      ) : null}
+
+      {tab === 'resources' && resourceId && selected ? (
+        <Panel className="max-w-3xl p-6 lg:p-8">
+          <ResourceReader item={selected} />
+        </Panel>
+      ) : null}
+
+      {tab === 'resources' && !resourceId && !loading ? (
+        <div className="flex flex-col gap-3">
+          <Panel className="p-4 sm:p-5">
+            <Field
+              label="Search"
+              name="libraryQuery"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Title or tag"
+            />
+            <div className="mt-3 flex flex-wrap gap-2">
+              {(['ALL', 'ARTICLE', 'VIDEO'] as const).map((id) => (
+                <Chip key={id} active={kind === id} onClick={() => setKind(id)}>
+                  {id === 'ALL' ? 'All' : id === 'ARTICLE' ? 'Articles' : 'Videos'}
+                </Chip>
+              ))}
+              {tags.map((item) => (
+                <Chip
+                  key={item}
+                  active={tag === item}
+                  onClick={() => setTag((prev) => (prev === item ? null : item))}
+                >
+                  {item}
+                </Chip>
+              ))}
+            </div>
           </Panel>
-        ) : (
           <div className="grid gap-3 sm:grid-cols-2">
-            {resources.length === 0 ? (
+            {visible.length === 0 ? (
               <Panel className="p-6 sm:col-span-2">
-                <p className="text-[14px] text-mist">No published resources yet.</p>
+                <p className="text-[14px] text-mist">No published resources in this filter.</p>
               </Panel>
             ) : (
-              resources.map((item) => (
+              visible.map((item) => (
                 <button
                   key={item.id}
                   type="button"
                   className="h-full text-left"
-                  onClick={() => {
-                    void getResource(item.id)
-                      .then(setSelected)
-                      .catch((err) =>
-                        setError(err instanceof ApiError ? err.message : 'Couldn’t open.'),
-                      );
-                  }}
+                  onClick={() => navigate(`/library/${item.id}`)}
                 >
                   <Panel className="h-full p-5 transition hover:border-brass/35">
                     <p className="text-[11px] uppercase tracking-[0.12em] text-sage">{item.type}</p>
                     <p className="mt-2 font-display text-xl text-cream">{item.title}</p>
+                    {item.tags.length ? (
+                      <p className="mt-2 text-[12px] text-mist">{item.tags.join(' · ')}</p>
+                    ) : null}
                   </Panel>
                 </button>
               ))
             )}
           </div>
-        )
+        </div>
       ) : null}
     </AppShell>
   );

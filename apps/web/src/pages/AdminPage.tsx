@@ -9,7 +9,6 @@ import {
   searchUsers,
   suspendUser,
 } from '../api/admin';
-import { createResource } from '../api/resources';
 import { createSupportGroup } from '../api/groups';
 import { ApiError, isUnimplemented } from '../api/errors';
 import type { AuditLogEntry, PendingVerification, VerificationDetail } from '../api/types';
@@ -21,7 +20,7 @@ import { ToolTile } from '../components/ui/ActionCard';
 import { Button } from '../components/ui/Button';
 import { Field, FieldGroup, TextArea } from '../components/ui/Field';
 import { Notice } from '../components/ui/Notice';
-import { Segmented } from '../components/ui/Segmented';
+import { ResourceManager } from '../components/library/ResourceManager';
 import { defaultScheduleInput, formatWhen, localInputToIso, staffRoleLabel } from '../lib/format';
 
 type Section = 'home' | 'verify' | 'users' | 'content' | 'audit';
@@ -511,15 +510,10 @@ function ContentTools({
   const [topic, setTopic] = useState('');
   const [schedule, setSchedule] = useState(defaultScheduleInput);
   const [capacity, setCapacity] = useState('8');
-  const [title, setTitle] = useState('');
-  const [type, setType] = useState<'ARTICLE' | 'VIDEO'>('ARTICLE');
-  const [body, setBody] = useState('');
-  const [url, setUrl] = useState('');
   const [groupActing, setGroupActing] = useState(false);
-  const [resourceActing, setResourceActing] = useState(false);
 
   return (
-    <div className="grid gap-3 xl:grid-cols-2">
+    <div className="flex flex-col gap-3">
       <Panel className="p-5">
         <p className="text-[11px] uppercase tracking-[0.14em] text-brass">Support group</p>
         <form
@@ -565,54 +559,7 @@ function ContentTools({
         </form>
       </Panel>
 
-      <Panel className="p-5">
-        <p className="text-[11px] uppercase tracking-[0.14em] text-brass">Resource</p>
-        <form
-          className="mt-3 flex flex-col gap-3"
-          onSubmit={(event: FormEvent) => {
-            event.preventDefault();
-            setResourceActing(true);
-            void createResource({
-              type,
-              title: title.trim(),
-              body: body.trim() || undefined,
-              url: url.trim() || undefined,
-              published: true,
-            })
-              .then(() => {
-                onNotice('Resource published.');
-                setTitle('');
-                setBody('');
-                setUrl('');
-              })
-              .catch((err) => onError(err instanceof ApiError ? err.message : 'Failed.'))
-              .finally(() => setResourceActing(false));
-          }}
-        >
-          <Segmented
-            value={type}
-            onChange={setType}
-            options={[
-              { value: 'ARTICLE', label: 'Article', hint: 'Body text' },
-              { value: 'VIDEO', label: 'Video', hint: 'URL' },
-            ]}
-          />
-          <FieldGroup>
-            <Field label="Title" name="title" value={title} onChange={(e) => setTitle(e.target.value)} required />
-            <TextArea
-              label="Body"
-              name="body"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="What members should take away…"
-            />
-            <Field label="URL" name="url" value={url} onChange={(e) => setUrl(e.target.value)} />
-          </FieldGroup>
-          <Button type="submit" loading={resourceActing}>
-            Publish resource
-          </Button>
-        </form>
-      </Panel>
+      <ResourceManager onNotice={onNotice} onError={onError} />
     </div>
   );
 }

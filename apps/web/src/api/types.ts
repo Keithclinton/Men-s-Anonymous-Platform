@@ -244,6 +244,16 @@ export interface ResourceItem {
   tags: string[];
   published: boolean;
   createdAt: string;
+  updatedAt?: string;
+}
+
+export interface ResourceInput {
+  type: ResourceType;
+  title: string;
+  body?: string;
+  url?: string;
+  tags?: string[];
+  published?: boolean;
 }
 
 export interface PendingVerification {
