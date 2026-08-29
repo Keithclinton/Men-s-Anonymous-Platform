@@ -68,6 +68,10 @@ export function RegisterPage() {
   function goNext() {
     markTouched('username', 'password', 'confirm');
     if (!step1Valid) return;
+    if (!ageOk || !termsOk) {
+      setError('Confirm you are 18+ and accept the terms.');
+      return;
+    }
     setError(null);
     setStep(2);
   }
@@ -148,11 +152,11 @@ export function RegisterPage() {
       actions={
         step === 1 ? (
           isProvider ? (
-            <Button type="submit" form="register-form" loading={submitting} disabled={!ageOk || !termsOk}>
+            <Button type="submit" form="register-form" loading={submitting}>
               Create account
             </Button>
           ) : (
-            <Button type="submit" form="register-form" disabled={!ageOk || !termsOk}>
+            <Button type="submit" form="register-form">
               Continue
             </Button>
           )
