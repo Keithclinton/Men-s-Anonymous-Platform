@@ -11,6 +11,13 @@ import { createNestApp } from '../apps/api/src/create-app';
  * request handler is cheap to call repeatedly, but re-running module init (DB connections,
  * etc.) on every request would be slow and wasteful. A failed bootstrap resets the cache so
  * the next invocation retries instead of being stuck replaying the same rejected promise.
+ *
+ * The 1:1 chat WebSocket gateway is intentionally NOT wired into this same handler — it
+ * lives at api/socket.ts as its own isolated Vercel Function instead. Vercel's WebSocket
+ * support requires the default export to be a real http.Server built synchronously at
+ * module scope, a fundamentally different shape than this callback-style handler; forcing
+ * that shape onto the main REST entry point risked destabilizing every other endpoint for
+ * an unverified benefit. See api/socket.ts for the reasoning in full.
  */
 let handlerPromise: Promise<(req: VercelRequest, res: VercelResponse) => void> | null = null;
 

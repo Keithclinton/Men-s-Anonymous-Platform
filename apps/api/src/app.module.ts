@@ -65,6 +65,9 @@ import { AdminModule } from './modules/admin/admin.module';
     ResourcesModule,
     FeedbackModule,
     AdminModule,
+    // ChatModule is deliberately NOT here — see api/socket.ts's header comment. A
+    // @WebSocketGateway() provider in this module would make Nest auto-attach an
+    // unauthenticated default WebSocket listener onto this app's own httpServer.
   ],
   controllers: [HealthController],
   providers: [
