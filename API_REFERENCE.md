@@ -224,6 +224,45 @@ Marks the booking `COMPLETED` (unlocks feedback). Idempotent. `409` if never sta
 
 ---
 
+## Chat (WebSocket)
+
+1:1 text chat between a booking's two participants. **Separate from the REST API** — its own Vercel Function (`api/socket.ts`), its own URL. Message *content* is relayed only and never stored server-side (ARCHITECTURE.md §6) — there's no history endpoint; a client that wasn't connected when a message was sent never sees it.
+
+- **URL:** same host as the REST API (`https://<api-domain>`), **path:** `/api/socket/socket.io` — both must be set explicitly, the Socket.IO client defaults to `/socket.io`.
+- **Transport:** `transports: ['websocket']` — required. Vercel's WebSocket support doesn't do HTTP long-polling, and that's the Socket.IO client default, so leaving it unset silently breaks the connection.
+- **Auth:** pass the access token via the `auth` option, not a header — `io(url, { auth: { token: accessToken } })`. A connection with no token, or an expired/invalid one, is rejected at handshake (`connect_error`).
+
+```js
+import { io } from 'socket.io-client';
+
+const socket = io('https://men-s-anonymous-platform-api.vercel.app', {
+  path: '/api/socket/socket.io',
+  transports: ['websocket'],
+  auth: { token: accessToken },
+});
+```
+
+**Events you emit:**
+
+| Event | Payload | Ack response |
+|---|---|---|
+| `join` | `{ bookingId }` | `{ ok: true }` or `{ ok: false, error }` — rejected unless you're `clientId`/`providerId` on that booking and it's `CONFIRMED` or `COMPLETED` |
+| `message` | `{ bookingId, text }` (text ≤ 4000 chars) | `{ ok: true }` or `{ ok: false, error }` — must `join` first |
+| `typing` | `{ bookingId }` | none |
+| `leave` | `{ bookingId }` | none |
+
+**Events you receive:**
+
+| Event | Payload |
+|---|---|
+| `message` | `{ bookingId, senderId, text, sentAt }` — broadcast to the room, including back to the sender |
+| `typing` | `{ bookingId, userId }` |
+| `presence` | `{ userId, online }` — fires on join/leave/disconnect |
+
+**Reconnection is your responsibility.** Vercel Function WebSocket connections force-close after 5 minutes on the Hobby plan (a hard platform limit, see [Vercel's WebSocket docs](https://vercel.com/docs/functions/websockets#handle-disconnections-and-reconnects)) — Socket.IO's client reconnects automatically, but you must re-`join` every booking room on each reconnect; room membership isn't remembered across a dropped connection. On a genuinely cold function instance, allow a couple of seconds after connecting before relying on delivery (the Redis pub/sub adapter that makes cross-instance delivery work needs a moment to establish on first spin-up).
+
+---
+
 ## Billing (M-Pesa)
 
 > **Async by nature.** `POST .../pay` only confirms the STK Push prompt was sent — not that it succeeded. Poll `payment-status` every 2–3s until it's no longer `PENDING`, and show a "check your phone" state meanwhile.
