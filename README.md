@@ -201,36 +201,51 @@ will say so explicitly.
 ## Security
 
 - Every route is authenticated by default (JWT), with per-route role checks (`CLIENT` /
-  `PROVIDER` / `ADMIN`) and rate limiting (100 req/min per IP globally; 3–5 req/min on
-  `/auth/*` and the M-Pesa pay endpoint specifically). Rate-limit counters live in Redis,
+  `PROVIDER` / `ADMIN`, further scoped by `staffRole` for `ADMIN` — ARCHITECTURE.md §9a) and
+  rate limiting (100 req/min per IP globally; 20 req/min on `/auth/*`; 3 req/min on the
+  M-Pesa pay/payout/subscription endpoints specifically). Rate-limit counters live in Redis,
   not in-memory — required, not just nice-to-have, since this runs as serverless functions
   with no single long-lived process to hold counters in memory.
 - Real PII (name/email/phone) lives only in the identity vault, encrypted at rest
   (AES-256-GCM), never in the app-core database — see ARCHITECTURE.md §3.
-- `npm audit` is checked regularly. Remaining findings at the time of writing are all
-  transitive dependencies of build/deploy tooling only (`@nestjs/cli`'s Angular schematics
-  chain, `@vercel/node`'s own build-utils chain) or of `@nestjs/platform-express`'s
-  `multer`/`body-parser`/`qs` chain, where the vulnerable code paths (file uploads,
-  malformed size-limit config) aren't exercised by this app — none of it ships to the
-  deployed function. Full resolution of the platform-express chain needs a NestJS 11
-  migration, tracked as a follow-up rather than done blind. Run `npm audit` yourself before
-  deploying anywhere real.
+- `npm audit` is checked regularly. Remaining findings at the time of writing:
+  - Transitive dependencies of build/deploy tooling only (`@nestjs/cli`'s Angular schematics
+    chain, `@vercel/node`'s own build-utils chain) or of `@nestjs/platform-express`'s
+    `multer`/`body-parser`/`qs` chain, where the vulnerable code paths (file uploads,
+    malformed size-limit config) aren't exercised by this app — none of it ships to the
+    deployed function.
+  - `@nestjs/core`'s [GHSA-36xv-jgw5-4q75](https://github.com/advisories/GHSA-36xv-jgw5-4q75)
+    (CVE-2026-35515, moderate) — an injection issue in `SseStream._transform()`, exploitable
+    only through an `@Sse()` endpoint whose `type`/`id` fields carry attacker-influenced
+    data. This codebase has zero `@Sse()` endpoints (grep it yourself:
+    `grep -rn "@Sse(" apps/api/src` comes back empty) — the vulnerable code path is
+    unreachable here regardless of the installed version. The patch shipped in
+    `@nestjs/core@11.1.18`; a full NestJS 11 migration (which would also close the
+    `platform-express` chain above) is a real undertaking for a framework this central and
+    isn't being done just to silence an audit finding that isn't actually exploitable in our
+    usage — reviewed and consciously deferred, not overlooked.
+  - Run `npm audit` yourself before deploying anywhere real — this list reflects a point in
+    time, not a standing guarantee.
 - Found a real vulnerability? Please report it privately rather than opening a public issue.
 
 ## What's real vs. scaffolded
 
 Every module in ARCHITECTURE.md §4 is implemented end-to-end and has been exercised live
-against real Postgres/Redis (not just compiled): auth, the identity vault, provider
-onboarding + verification, direct booking, auto-match/request-queue with cron-driven
-timeout reassignment, M-Pesa billing (STK Push shape + reconciliation), payment-gated
-session start/end, feedback, support groups, the resource library, and the admin review
-queue/audit log.
+against real Postgres/Redis (not just compiled): auth (handle-based for clients,
+email-based for providers), the identity vault, provider onboarding + verification +
+publishable slots, direct/slot-based booking, auto-match/request-queue with cron-driven
+timeout reassignment, M-Pesa billing (STK Push shape + reconciliation) plus provider
+earnings, 1:1 real-time chat over WebSockets (its own isolated Vercel Function, Redis-backed
+for cross-instance delivery), payment-gated session start/end, feedback, support groups, the
+resource library, and the admin review queue/audit log/user roster/staff-role scoping.
 
-Two things are deliberately left as documented TODOs rather than faked:
-- **No video vendor is wired up** (open decision — ARCHITECTURE.md §12). `SessionsService`
-  issues a placeholder `roomRef`; swap `createRoom()` for a real Daily.co/Twilio/Agora call
-  once that's chosen (a self-hosted option like mediasoup doesn't fit serverless — it needs
-  a persistent process, same constraint that shaped the rest of this deployment).
+One thing is deliberately left as a documented TODO rather than faked:
+- **Video calling needs a real `DAILY_API_KEY`/`DAILY_SUBDOMAIN`.** The Daily.co integration
+  itself is fully wired (`modules/sessions/gateways/daily.gateway.ts`) — without those two
+  env vars set, `SessionsService` automatically falls back to a placeholder `roomRef`
+  instead (`modules/sessions/gateways/mock-video.gateway.ts`), so the rest of the booking →
+  payment → session flow works either way. Set both and real rooms start getting created
+  with zero other config changes.
 - **§9a's admin sub-roles** (support agent / moderator / compliance officer / super admin)
   aren't enforced — the schema only has one `ADMIN` role today. `AdminService`'s header
   comment flags this; every admin action is still audit-logged so the split can be

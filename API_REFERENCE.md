@@ -124,13 +124,13 @@ Scoped grants — counselors only see what an **active** grant projects. Revoke 
 
 Provider profiles are public/pseudonymous — `userId` doubles as the provider's public ID used in booking calls.
 
-### `GET /providers?specialty=` — Public
+### `GET /providers?specialty=&kind=` — Public
 
-Browse published, verified providers. `specialty` query param optional.
+Browse published, verified providers. Both query params optional. `kind`: `"COUNSELOR"` \| `"MODERATOR"`.
 
 ```json
 [{
-  "userId": "uuid", "displayName": "Coach Dave", "bio": null,
+  "userId": "uuid", "displayName": "Coach Dave", "bio": null, "kind": "COUNSELOR",
   "specialties": ["career"],
   "rateCard": { "minimumRate": 500, "hourlyRate": 1500 },
   "availability": null
@@ -139,6 +139,12 @@ Browse published, verified providers. `specialty` query param optional.
 
 ### `GET /providers/:id` — Public
 Single profile, same shape. 404 if not found/not published.
+
+### `GET /providers/:id/slots` — Public
+Bookable open slots for one provider — only ever unbooked, future ones, soonest first. Feed this straight into `POST /bookings`'s `slotId`.
+```json
+[{ "id": "uuid", "providerId": "uuid", "start": "...", "durationMin": 30, "bookingId": null, "createdAt": "..." }]
+```
 
 ### `POST /providers/me/verification` — Role: `PROVIDER`
 Submit credentials for admin review. Required before publishing a profile.
@@ -152,6 +158,12 @@ Submit credentials for admin review. Required before publishing a profile.
 
 → `201 { "id": "uuid" }`
 
+### `GET /providers/me/verification` — Role: `PROVIDER`
+Check your own status — no separate notification channel exists, poll this after submitting.
+```json
+{ "status": "NOT_SUBMITTED" | "PENDING" | "APPROVED" | "REJECTED", "submittedAt": "...", "decisionAt": null, "verifyingBody": null }
+```
+
 ### `PUT /providers/me` — Role: `PROVIDER`
 Publish/update your profile (upsert).
 
@@ -159,41 +171,53 @@ Publish/update your profile (upsert).
 |---|---|---|
 | `displayName` | string | required, 2+ chars |
 | `bio` | string | optional |
+| `kind` | `"COUNSELOR"` \| `"MODERATOR"` | required |
 | `specialties` | string[] | required |
 | `rateCard` | `{ minimumRate, hourlyRate }` | optional, but required before clients can pay |
-| `availability` | object | optional, free-form |
+| `availability` | object | optional, free-form prose — bookable times are slots, below, not this |
 
 - `403` — not verified yet (message tells the user exactly what to do next, safe to show directly)
 
 ### `PATCH /providers/me/availability` — Role: `PROVIDER`
 Body: `{ "availability": { ... } }`. `404` if no profile published yet.
 
+### Slots (your own calendar) — Role: `PROVIDER`
+
+| Endpoint | Notes |
+|---|---|
+| `GET /providers/me/slots` | Every slot you've published — open and booked |
+| `POST /providers/me/slots` | Body: `{ "start": "ISO date, future", "durationMin": 15–180 }` → `201` the created slot. `403` if you haven't published a profile yet |
+| `DELETE /providers/me/slots/:slotId` | `404` not yours · `409` already booked — cancel the booking instead |
+
 ---
 
 ## Booking (direct)
 
-Client picks a provider and a slot directly — auto-confirms instantly, no accept/decline. For "match me with anyone available," see [Matching](#matching).
+Client picks a provider directly — auto-confirms instantly, no accept/decline. For "match me with anyone available," see [Matching](#matching).
+
+Two ways to book — send `slotId` **or** `scheduledStart`+`durationMin`, never both:
 
 ### `POST /bookings` — Role: `CLIENT`
 
 | field | type | notes |
 |---|---|---|
-| `providerId` | uuid | required |
-| `scheduledStart` | ISO date | required, must be future |
-| `durationMin` | int | 15–180. ≤30 bills `MINIMUM`, >30 bills `HOURLY` — computed server-side |
-| `channelType` | `"CHAT"` \| `"VIDEO"` | required |
+| `providerId` | uuid | required either way |
+| `slotId` | uuid | **Recommended.** Books one of the provider's published open slots (`GET /providers/:id/slots`) — `scheduledStart`/`durationMin`/`billingType` are all derived from the slot. Atomic: if two clients race for the same slot, the loser gets `409` |
+| `scheduledStart` | ISO date | Alternative to `slotId` — required if `slotId` omitted, must be future |
+| `durationMin` | int | Alternative to `slotId` — required if `slotId` omitted, 15–180. ≤30 bills `MINIMUM`, >30 bills `HOURLY` |
+| `channelType` | `"CHAT"` \| `"VIDEO"` | required either way |
 
 ```json
 {
   "id": "uuid", "clientId": "uuid", "providerId": "uuid",
   "scheduledStart": "...", "durationMin": 20, "billingType": "MINIMUM",
-  "status": "CONFIRMED", "specialty": null, "declinedProviderIds": [],
+  "status": "CONFIRMED", "specialty": null, "kind": null, "declinedProviderIds": [],
   "session": { "id": "uuid", "channelType": "VIDEO", "roomRef": null, "startedAt": null, "endedAt": null }
 }
 ```
 
-- `404` — provider not found / hasn't published a profile
-- `409` — `scheduledStart` in the past, or an overlapping booking already exists for that provider
+- `404` — provider not found / hasn't published a profile, or `slotId` doesn't exist
+- `409` — slot already booked (or just got booked by someone else), `scheduledStart` in the past, or (non-slot path) an overlapping booking already exists for that provider
 
 ### `GET /bookings/mine` — Authenticated
 Every booking where you're client or provider, newest first.
@@ -208,16 +232,23 @@ Every booking where you're client or provider, newest first.
 
 ## Sessions
 
-The chat/video session tied to a booking. **No video vendor is wired up yet** (open decision, see ARCHITECTURE.md §12) — `roomRef` is a placeholder string, not a joinable room.
+The chat/video session tied to a booking. `CHAT` sessions don't use anything here beyond `start`/`end` — see [Chat](#chat-websocket) for the actual messaging. `VIDEO` sessions get a real Daily.co room **once `DAILY_API_KEY` is configured on the backend** — until then `roomRef` is a harmless placeholder string (`pending-provider-room-...`), not a joinable room. Check with whoever runs the deployment which mode is live; both return the same shape either way.
 
 ### `POST /bookings/:bookingId/session/start` — Authenticated
-Requires booking `CONFIRMED` **and** payment `SUCCEEDED`. Idempotent.
+Requires booking `CONFIRMED` **and** payment `SUCCEEDED`. Idempotent. For `VIDEO`, this is where the room actually gets created.
 
 ```json
-{ "id": "uuid", "bookingId": "uuid", "channelType": "VIDEO", "roomRef": "pending-provider-room-...", "startedAt": "...", "endedAt": null }
+{ "id": "uuid", "bookingId": "uuid", "channelType": "VIDEO", "roomRef": "booking-...", "startedAt": "...", "endedAt": null }
 ```
 
 `403` not a participant · `409` booking not confirmed, or payment not succeeded yet.
+
+### `GET /bookings/:bookingId/session/join-token` — Authenticated · `VIDEO` only
+Call this right before actually joining the call — tokens are minted fresh per participant, per request, never stored. Short-lived (1 hour).
+```json
+{ "token": "...", "url": "https://yourteam.daily.co/booking-...?t=...", "expiresAt": "..." }
+```
+`409` — session is `CHAT` (use the chat gateway instead), or the session hasn't been started yet.
 
 ### `POST /bookings/:bookingId/session/end` — Authenticated
 Marks the booking `COMPLETED` (unlocks feedback). Idempotent. `409` if never started.
@@ -282,6 +313,31 @@ Body: `{ "phone": "254712345678" }` (digits, 9–15, optional leading `+`)
 { "status": "NOT_INITIATED" | "PENDING" | "SUCCEEDED" | "FAILED" | "REFUNDED", "amount": 500, "externalRef": "ws_CO_..." }
 ```
 
+### `GET /billing/providers/me/earnings` — Role: `PROVIDER`
+Computed on read from your bookings' successful charges minus payouts — not a stored running balance.
+```json
+{
+  "currency": "KES", "grossSucceeded": 4500, "paidOut": 0, "pendingPayout": 0, "available": 4500,
+  "recentCharges": [{ "amount": "500", "createdAt": "...", "bookingId": "uuid", "externalRef": "..." }],
+  "recentPayouts": []
+}
+```
+
+### `POST /billing/providers/me/payout` — Role: `PROVIDER`
+Body: `{ "phone": "...", "amount": 1000 }` (`amount` optional, defaults to full available balance). `409` no available balance · `400` amount exceeds available balance. **Real M-Pesa B2C payouts need a Safaricom-approved Daraja B2C product** (separate from STK Push approval) — without it, this returns `501 Not Implemented` regardless of frontend readiness. Works end-to-end in test/`PAYMENTS_MODE=mock` deployments; check with whoever runs the deployment which mode is live.
+
+### `GET /billing/plans` — Public
+Static subscription plan definitions — Phase 2 scaffold (ARCHITECTURE.md §11c), not real recurring billing.
+```json
+[{ "plan": "starter", "label": "Starter", "sessionsIncluded": 2, "amountKes": 2000, "billing": "monthly", "phase": 2, "note": "Phase 2 scaffold — manual monthly STK push, not true auto-renew." }]
+```
+
+### `GET /billing/subscriptions/mine` — Role: `CLIENT`
+Your subscription history, newest first.
+
+### `POST /billing/subscriptions` — Role: `CLIENT`
+Body: `{ "plan": "starter" | "standard", "phone": "..." }`. Fires an STK push and activates the subscription **immediately** (optimistic — doesn't wait for the push to be approved on the phone; there's no `PENDING` subscription state, only `ACTIVE`/`LAPSED`/`CANCELED`). → `201 { "subscription": {...}, "payment": { "externalRef": "...", "status": "SUCCEEDED" } }`
+
 ### Internal only (not for frontend use)
 - `POST /billing/mpesa/callback` — Safaricom calls this directly
 - `GET /billing/internal/reconcile` — scheduled GitHub Actions workflow, every 5 min; requires `Authorization: Bearer <CRON_SECRET>`
@@ -297,11 +353,12 @@ Client asks for "someone with X specialty" instead of picking a person. Starts `
 | field | type |
 |---|---|
 | `specialty` | string, required |
+| `kind` | `"COUNSELOR"` \| `"MODERATOR"`, optional — omit for either |
 | `scheduledStart` | ISO date, required, future |
 | `durationMin` | int, 15–180 |
 | `channelType` | `"CHAT"` \| `"VIDEO"` |
 
-Response: booking shape (see Booking), `status: "REQUESTED"`, `specialty` set. `404` if no provider currently offers that specialty.
+Response: booking shape (see Booking), `status: "REQUESTED"`, `specialty`/`kind` set. `404` if no provider currently offers that specialty (and kind, if given). Reassignment on decline/timeout preserves whatever `kind` you originally asked for.
 
 ### `POST /matching/:bookingId/accept` — Role: `PROVIDER`
 → `CONFIRMED`. `403` not assigned to you · `409` no longer pending.
@@ -323,7 +380,7 @@ Upcoming groups. Member identities are never exposed, only a headcount.
 ```
 
 ### `GET /support-groups/mine` — Authenticated
-### `POST /support-groups` — Role: `ADMIN`
+### `POST /support-groups` — Role: `ADMIN` + `staffRole: STAFF_MODERATOR`
 Body: `{ "topic": "...", "schedule": "ISO date", "capacity": 8 }`
 
 ### `POST /support-groups/:id/join` — Authenticated
@@ -345,7 +402,7 @@ Only ever returns `published: true` items.
 ### `GET /resources/:id` — Public
 `404` if not found or not published.
 
-### `POST /resources` — Role: `ADMIN`
+### `POST /resources` — Role: `ADMIN` + `staffRole: STAFF_MODERATOR`
 
 | field | type | notes |
 |---|---|---|
@@ -376,38 +433,47 @@ Feedback received across your sessions as a provider (empty array if you're not 
 
 ## Admin
 
-Everything here requires `ADMIN`. One flat admin role today — no support-agent/moderator/compliance sub-split yet (see ARCHITECTURE.md §9a).
+Everything here requires `ADMIN`, further scoped per-endpoint by `staffRole` (ARCHITECTURE.md §9a) — `SUPER_ADMIN` always passes every check below; the other three roles are each scoped to a subset. An `ADMIN` account with no `staffRole` assigned yet passes none of them (`403`).
 
-| Endpoint | Notes |
-|---|---|
-| `GET /admin/verifications` | Pending provider verification queue |
-| `GET /admin/verifications/:id` | Full detail incl. decrypted license number — sensitive, vault-audit-logged |
-| `POST /admin/verifications/:id/decision` | Body: `{ "decision": "APPROVED" \| "REJECTED" }` |
-| `POST /admin/users/:userId/suspend` | Returns updated user |
-| `POST /admin/users/:userId/reinstate` | Returns updated user |
-| `GET /admin/audit-log?limit=` | Default 100, capped at 500 |
-| `POST /admin/vault/:pseudonymId/break-glass` | Reveals real name/email/phone. Body: `{ "reason": "10+ chars, required" }`. Rare, justified, logged — see ARCHITECTURE.md §9 |
+| Endpoint | Requires `staffRole` | Notes |
+|---|---|---|
+| `GET /admin/users?search=&role=&status=&take=` | `SUPPORT_AGENT`, `STAFF_MODERATOR`, or `COMPLIANCE_OFFICER` | Searchable roster (handle substring match — never searches by email). `take` default 50, capped 200 |
+| `GET /admin/verifications` | `COMPLIANCE_OFFICER` | Pending provider verification queue |
+| `GET /admin/verifications/:id` | `COMPLIANCE_OFFICER` | Full detail incl. decrypted license number — sensitive, vault-audit-logged |
+| `POST /admin/verifications/:id/decision` | `COMPLIANCE_OFFICER` | Body: `{ "decision": "APPROVED" \| "REJECTED" }` |
+| `POST /admin/users/:userId/suspend` | `SUPPORT_AGENT` or `STAFF_MODERATOR` | Returns updated user |
+| `POST /admin/users/:userId/reinstate` | `SUPPORT_AGENT` or `STAFF_MODERATOR` | Returns updated user |
+| `GET /admin/audit-log?limit=` | `SUPPORT_AGENT`, `STAFF_MODERATOR`, or `COMPLIANCE_OFFICER` | Default 100, capped at 500 |
+| `POST /admin/vault/:pseudonymId/break-glass` | `COMPLIANCE_OFFICER` | Reveals real name/email/phone. Body: `{ "reason": "10+ chars, required" }`. Rare, justified, logged — see ARCHITECTURE.md §9 |
+| `POST /admin/users/:userId/staff-role` | `SUPER_ADMIN` only | The one non-DB-script way to grant/revoke another admin's scope. Body: `{ "staffRole": "SUPPORT_AGENT" \| "STAFF_MODERATOR" \| "COMPLIANCE_OFFICER" \| "SUPER_ADMIN" }` — omit/null clears it. `404` if `userId` isn't an `ADMIN` account |
+
+`POST /resources` and `POST /support-groups` also require `STAFF_MODERATOR` — see their own sections below.
 
 ---
 
 ## End-to-end flows
 
 **Provider onboarding → visible in search**
-1. `POST /auth/signup` with `role: "PROVIDER"`
+1. `POST /auth/signup` with `role: "PROVIDER"` and a real `email` (this becomes their login identifier — see Authentication above)
 2. `POST /providers/me/verification` with license info
-3. Provider is invisible/unbookable until an admin approves — UI should say "under review"
+3. Provider is invisible/unbookable until an admin approves — poll `GET /providers/me/verification` (or just show "under review" and wait)
 4. Admin: `GET /admin/verifications` → `POST /admin/verifications/:id/decision` `{"decision":"APPROVED"}`
-5. `PUT /providers/me` now succeeds — provider is live on `GET /providers`
+5. `PUT /providers/me` (with `kind` set) now succeeds — provider is live on `GET /providers`
+6. `POST /providers/me/slots` to publish bookable times, so clients have something to pick from `GET /providers/:id/slots`
 
-**Client books and pays (direct booking)**
-1. `GET /providers?specialty=...` → pick one
-2. `POST /bookings` → `CONFIRMED` immediately
-3. `POST /billing/bookings/:id/pay` with phone → `PENDING`
-4. Poll `GET /billing/bookings/:id/payment-status` until `SUCCEEDED`/`FAILED`
-5. `POST /bookings/:bookingId/session/start` → succeeds, returns `roomRef`
-6. … session happens …
-7. `POST /bookings/:bookingId/session/end` → `COMPLETED`
-8. `POST /sessions/:sessionId/feedback`
+**Client books and pays (a published slot)**
+1. `GET /providers?specialty=...&kind=...` → pick one
+2. `GET /providers/:id/slots` → pick an open one
+3. `POST /bookings` with `{ providerId, slotId, channelType }` → `CONFIRMED` immediately
+4. `POST /billing/bookings/:id/pay` with phone → `PENDING`
+5. Poll `GET /billing/bookings/:id/payment-status` until `SUCCEEDED`/`FAILED`
+6. `POST /bookings/:bookingId/session/start` → succeeds, returns `roomRef`
+7. `VIDEO` only: `GET /bookings/:bookingId/session/join-token` right before joining the call. `CHAT`: connect to the [chat gateway](#chat-websocket) and `join` instead
+8. … session happens …
+9. `POST /bookings/:bookingId/session/end` → `COMPLETED`
+10. `POST /sessions/:sessionId/feedback`
+
+(To book an explicit time instead of a published slot, send `scheduledStart`+`durationMin` in step 3 instead of `slotId` — same flow from there.)
 
 **Client requests auto-match**
 1. `POST /matching/request` with a specialty → `REQUESTED`

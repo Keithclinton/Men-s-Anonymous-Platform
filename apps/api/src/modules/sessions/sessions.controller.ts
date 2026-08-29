@@ -1,4 +1,4 @@
-import { Controller, Param, Post } from '@nestjs/common';
+import { Controller, Get, Param, Post } from '@nestjs/common';
 import { AuthenticatedUser, CurrentUser } from '../../common/decorators/current-user.decorator';
 import { SessionsService } from './sessions.service';
 
@@ -9,6 +9,12 @@ export class SessionsController {
   @Post('start')
   start(@CurrentUser() user: AuthenticatedUser, @Param('bookingId') bookingId: string) {
     return this.sessions.start(bookingId, user.userId);
+  }
+
+  /** Call this right before actually joining the call — tokens are minted fresh, not stored. */
+  @Get('join-token')
+  getJoinToken(@CurrentUser() user: AuthenticatedUser, @Param('bookingId') bookingId: string) {
+    return this.sessions.getJoinToken(bookingId, user.userId);
   }
 
   @Post('end')

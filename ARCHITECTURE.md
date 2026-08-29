@@ -321,7 +321,7 @@ limit doesn't take long to exhaust without pooling in front of it.
 
 ## 14. Open Decisions Worth Revisiting With You
 
-- Video provider: managed (Daily.co/Twilio/Agora) is effectively the only option now that infra is Vercel serverless — a self-hosted SFU (mediasoup) needs a persistent process, which isn't available. Worth confirming this constraint is acceptable before treating it as fully settled.
+- ~~Video provider~~ — **decided: Daily.co.** Its REST-only "create room → mint join token" flow needed no persistent server-side SDK connection, the best fit for Vercel serverless among the managed options (Twilio, Agora) considered — see `modules/sessions/gateways/`. Wired via `DAILY_API_KEY`/`DAILY_SUBDOMAIN`; falls back to a harmless placeholder room automatically when unset, so this ships without blocking on the account being created yet.
 - Whether any session content is ever persisted (even encrypted) for QA/compliance, or strictly metadata-only
 - Jurisdiction-specific compliance target (GDPR-style vs. HIPAA-adjacent vs. none formally, but "act like it" regardless)
 - Direct-booking vs. auto-match as the *default* for standard 1:1 sessions (recommended above, but worth confirming against your matching-quality expectations)

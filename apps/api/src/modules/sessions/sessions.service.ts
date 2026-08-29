@@ -1,22 +1,23 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { randomUUID } from 'crypto';
+import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { CorePrismaService } from '../../common/prisma/core-prisma.service';
 import { BookingService } from '../booking/booking.service';
+import { VIDEO_GATEWAY, VideoGateway } from './gateways/video-gateway.interface';
 
 /**
  * Orchestrates chat/video: creates ephemeral rooms with the video provider, issues
  * short-lived join tokens, tracks metadata only — never message/video content.
  * See ARCHITECTURE.md §4, §6.
  *
- * No video vendor has been chosen yet (open decision — see §12: managed Daily.co/Twilio/
- * Agora vs. self-hosted mediasoup), so `roomRef` here is a placeholder identifier, not a
- * real joinable room. Swap `createRoom()` for a real provider SDK call once that's decided.
+ * CHAT sessions never touch the video gateway at all — modules/chat's Socket.IO gateway
+ * handles that entirely separately and doesn't need a vendor room. Only VIDEO sessions get
+ * a real (or, without DAILY_API_KEY set, mock) room — see sessions.module.ts.
  */
 @Injectable()
 export class SessionsService {
   constructor(
     private readonly prisma: CorePrismaService,
     private readonly booking: BookingService,
+    @Inject(VIDEO_GATEWAY) private readonly video: VideoGateway,
   ) {}
 
   async start(bookingId: string, actorId: string) {
@@ -36,10 +37,28 @@ export class SessionsService {
       throw new ConflictException('Payment has not been confirmed for this booking yet');
     }
 
+    let roomRef: string | null = null;
+    if (session.channelType === 'VIDEO') {
+      const room = await this.video.createRoom({ bookingId });
+      roomRef = room.roomRef;
+    }
+
     return this.prisma.session.update({
       where: { bookingId },
-      data: { startedAt: new Date(), roomRef: this.createRoom() },
+      data: { startedAt: new Date(), roomRef },
     });
+  }
+
+  /** Minted fresh right before joining, not stored — keeps token exposure short-lived. */
+  async getJoinToken(bookingId: string, actorId: string) {
+    const session = await this.requireSessionForParticipant(bookingId, actorId);
+    if (session.channelType !== 'VIDEO') {
+      throw new ConflictException('This session is chat-only — use the chat gateway instead');
+    }
+    if (!session.roomRef) {
+      throw new ConflictException('Start the session before requesting a join token');
+    }
+    return this.video.createJoinToken({ roomRef: session.roomRef, userId: actorId });
   }
 
   async end(bookingId: string, actorId: string) {
@@ -58,11 +77,6 @@ export class SessionsService {
     });
     await this.booking.markCompleted(bookingId);
     return updated;
-  }
-
-  private createRoom(): string {
-    // TODO: replace with a real provider room-creation call (Daily.co/Twilio/Agora/mediasoup).
-    return `pending-provider-room-${randomUUID()}`;
   }
 
   private async requireSessionForParticipant(bookingId: string, actorId: string) {
