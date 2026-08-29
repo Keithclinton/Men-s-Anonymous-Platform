@@ -99,10 +99,28 @@ input[type='datetime-local'] {
   );
 }
 
+.sidebar-panel {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--color-ink-2) 92%, transparent), color-mix(in srgb, var(--color-ink) 94%, transparent));
+  border-right: 1px solid color-mix(in srgb, var(--color-cream) 8%, var(--color-line));
+  backdrop-filter: blur(22px);
+}
+
 .no-scrollbar {
   scrollbar-width: none;
 }
 
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

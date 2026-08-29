@@ -21,6 +21,11 @@ export function emailError(value: string): string | null {
   return null;
 }
 
+/** Login accepts a public handle or a vaulted email. */
+export function isEmailIdentifier(value: string): boolean {
+  return value.trim().includes('@');
+}
+
 /** Accepts E.164, or common Kenyan local forms (07… / 254…). */
 export function normalizePhone(value: string): string {
   const raw = value.trim().replace(/[\s()-]/g, '');

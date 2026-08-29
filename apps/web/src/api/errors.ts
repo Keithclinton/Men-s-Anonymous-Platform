@@ -44,3 +44,7 @@ export function networkError(): ApiError {
     'Can’t reach the server. Check your connection, or that the API is running.',
   ]);
 }
+
+export function isUnimplemented(err: unknown): boolean {
+  return err instanceof ApiError && (err.statusCode === 404 || err.statusCode === 501);
+}

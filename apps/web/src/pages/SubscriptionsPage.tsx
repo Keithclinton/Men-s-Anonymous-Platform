@@ -48,7 +48,7 @@ export function SubscriptionsPage() {
 
   if (user && user.role !== 'CLIENT') {
     return (
-      <AppShell backTo="/library" backLabel="More" title="Plans">
+      <AppShell backTo="/library" backLabel="Library" title="Plans">
         <Notice>Subscriptions are for client accounts.</Notice>
       </AppShell>
     );
@@ -70,11 +70,17 @@ export function SubscriptionsPage() {
   }
 
   return (
-    <AppShell backTo="/library" backLabel="More" title="Plans">
-      <p className="mb-4 max-w-[40ch] text-[14px] leading-6 text-mist">
-        Phase 2 scaffold — monthly session packs via M-Pesa STK. True auto-renew comes later.
-      </p>
+    <AppShell
+      backTo="/library"
+      backLabel="Library"
+      title="Plans"
+      subtitle="Phase 2 scaffold — monthly session packs via M-Pesa STK. True auto-renew comes later."
+    >
 
+      <Notice>
+        Plans are a Phase 2 scaffold. Do not treat this as live auto-renew billing — pay-per-session on a booking is the
+        current path.
+      </Notice>
       {error ? <Notice tone="danger">{error}</Notice> : null}
       {notice ? (
         <div className="mb-3">
@@ -100,25 +106,27 @@ export function SubscriptionsPage() {
                 ))}
             </Panel>
           ) : (
-            <form onSubmit={onSubmit} className="flex flex-col gap-3">
-              {plans.map((p) => (
-                <button
-                  key={p.plan}
-                  type="button"
-                  onClick={() => setPlan(p.plan)}
-                  className={
-                    plan === p.plan
-                      ? 'rounded-xl border border-brass/60 bg-surface-2 p-4 text-left'
-                      : 'rounded-xl border border-line p-4 text-left'
-                  }
-                >
-                  <p className="font-display text-xl text-cream">{p.label}</p>
-                  <p className="mt-1 text-[13px] text-mist">
-                    {p.sessionsIncluded} sessions · {formatKes(p.amountKes)} / month
-                  </p>
-                </button>
-              ))}
-              <Panel className="p-4">
+            <form onSubmit={onSubmit} className="flex flex-col gap-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {plans.map((p) => (
+                  <button
+                    key={p.plan}
+                    type="button"
+                    onClick={() => setPlan(p.plan)}
+                    className={
+                      plan === p.plan
+                        ? 'rounded-2xl border border-brass/60 bg-surface-2 p-5 text-left'
+                        : 'rounded-2xl border border-line p-5 text-left hover:border-mist/40'
+                    }
+                  >
+                    <p className="font-display text-xl text-cream">{p.label}</p>
+                    <p className="mt-1 text-[13px] text-mist">
+                      {p.sessionsIncluded} sessions · {formatKes(p.amountKes)} / month
+                    </p>
+                  </button>
+                ))}
+              </div>
+              <Panel className="max-w-md p-5">
                 <Field
                   label="M-Pesa phone"
                   name="phone"
@@ -128,9 +136,11 @@ export function SubscriptionsPage() {
                   required
                 />
               </Panel>
-              <Button type="submit" loading={submitting}>
-                Subscribe with M-Pesa
-              </Button>
+              <div className="max-w-md">
+                <Button type="submit" loading={submitting}>
+                  Subscribe with M-Pesa
+                </Button>
+              </div>
             </form>
           )}
         </div>

@@ -4,7 +4,7 @@ import type { MeResponse } from '../api/types';
 export interface AuthContextValue {
   user: MeResponse | null;
   ready: boolean;
-  signIn: (username: string, password: string, persist: boolean) => Promise<void>;
+  signIn: (identifier: string, password: string, persist: boolean) => Promise<void>;
   signUp: (input: {
     username: string;
     password: string;

@@ -10,11 +10,11 @@ import { Panel } from '../components/layout/Panel';
 import { Button } from '../components/ui/Button';
 import { Notice } from '../components/ui/Notice';
 import { Segmented } from '../components/ui/Segmented';
+import { SlotCalendar } from '../components/ui/SlotCalendar';
 import {
   channelLabel,
   estimateAmount,
   formatKes,
-  formatWhen,
   providerKindLabel,
 } from '../lib/format';
 
@@ -91,75 +91,65 @@ export function BookPage() {
   }
 
   return (
-    <AppShell backTo={`/providers/${id}`} backLabel="Back" title="Book">
+    <AppShell backTo={`/providers/${id}`} backLabel="Back" title="Book a session">
       {loading ? <p className="py-8 text-center text-[14px] text-mist">Loading…</p> : null}
 
       {provider ? (
-        <form onSubmit={onSubmit} className="flex flex-col gap-3" noValidate>
-          <Panel className="p-4">
-            <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-sage">
-              {providerKindLabel(provider.kind)}
-            </p>
-            <p className="mt-1 font-display text-xl text-cream">{provider.displayName}</p>
-            <p className="mt-1 text-[13px] text-mist">
-              {channelLabel(channel)}
-              {selected ? ` · ${selected.durationMin} min` : ''}
-              {estimate != null ? ` · about ${formatKes(estimate)}` : ''}
-            </p>
-          </Panel>
+        <form onSubmit={onSubmit} className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]" noValidate>
+          <div className="flex flex-col gap-3">
+            {error ? <Notice tone="danger">{error}</Notice> : null}
 
-          {error ? <Notice tone="danger">{error}</Notice> : null}
+            <Panel className="flex flex-col gap-4 p-5 lg:p-6">
+              <Segmented
+                legend="How"
+                value={channel}
+                onChange={setChannel}
+                options={[
+                  { value: 'CHAT', label: '1:1 chat', hint: 'Text only' },
+                  { value: 'VIDEO', label: 'Video', hint: 'Still anonymous' },
+                ]}
+              />
 
-          <Panel className="flex flex-col gap-4 p-4">
-            <Segmented
-              legend="How"
-              value={channel}
-              onChange={setChannel}
-              options={[
-                { value: 'CHAT', label: '1:1 chat', hint: 'Text only' },
-                { value: 'VIDEO', label: 'Video', hint: 'Still anonymous' },
-              ]}
-            />
-
-            {channel === 'VIDEO' ? (
-              <p className="text-[12px] leading-5 text-mist">
-                Video while anonymous is allowed. A live face is not the same as revealing your identity on file.
-              </p>
-            ) : null}
-
-            <fieldset>
-              <legend className="mb-2 text-[11px] font-medium uppercase tracking-[0.16em] text-mist">
-                Open slots
-              </legend>
-              {slots.length === 0 ? (
-                <p className="text-[13px] leading-5 text-mist">
-                  This provider hasn’t published open slots yet. Try auto-match, or check back later.
+              {channel === 'VIDEO' ? (
+                <p className="text-[12px] leading-5 text-mist">
+                  Video while anonymous is allowed. A live face is not the same as revealing your identity on file.
                 </p>
-              ) : (
-                <div className="flex flex-col gap-1.5">
-                  {slots.map((slot) => (
-                    <button
-                      key={slot.id}
-                      type="button"
-                      onClick={() => setSlotId(slot.id)}
-                      className={
-                        slotId === slot.id
-                          ? 'rounded-xl border border-brass/60 bg-surface-2 px-3.5 py-3 text-left text-[13px] text-cream'
-                          : 'rounded-xl border border-line px-3.5 py-3 text-left text-[13px] text-mist hover:text-cream'
-                      }
-                    >
-                      <span className="block text-cream">{formatWhen(slot.start)}</span>
-                      <span className="mt-0.5 block text-[12px] text-mist">{slot.durationMin} min</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </fieldset>
-          </Panel>
+              ) : null}
 
-          <Button type="submit" loading={submitting} disabled={!selected}>
-            Confirm booking
-          </Button>
+              <fieldset>
+                <legend className="mb-2 text-[11px] font-medium uppercase tracking-[0.16em] text-mist">
+                  Open slots
+                </legend>
+                {slots.length === 0 ? (
+                  <p className="text-[13px] leading-5 text-mist">
+                    This provider hasn’t published open slots yet. Try auto-match, or check back later.
+                  </p>
+                ) : (
+                  <SlotCalendar slots={slots} selectedId={slotId} onSelect={setSlotId} />
+                )}
+              </fieldset>
+            </Panel>
+
+            <Button type="submit" loading={submitting} disabled={!selected}>
+              Confirm booking
+            </Button>
+          </div>
+
+          <aside>
+            <Panel className="p-5">
+              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-sage">
+                {providerKindLabel(provider.kind)}
+              </p>
+              <p className="mt-1 font-display text-xl text-cream">{provider.displayName}</p>
+              <p className="mt-2 text-[13px] text-mist">
+                {channelLabel(channel)}
+                {selected ? ` · ${selected.durationMin} min` : ''}
+              </p>
+              {estimate != null ? (
+                <p className="mt-3 text-[15px] text-brass">About {formatKes(estimate)}</p>
+              ) : null}
+            </Panel>
+          </aside>
         </form>
       ) : null}
     </AppShell>

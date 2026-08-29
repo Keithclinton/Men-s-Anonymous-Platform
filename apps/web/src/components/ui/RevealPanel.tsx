@@ -145,15 +145,31 @@ export function RevealPanel({
               />
             ) : null}
             {level === 'NAME_PHOTO' ? (
-              <Field
-                label="Photo URL"
-                name="photoUrl"
-                value={photoUrl}
-                onChange={(e) => setPhotoUrl(e.target.value)}
-                placeholder="https://…"
-                hint="Profile photo for this relationship only."
-                required
-              />
+              <div className="px-4 py-3">
+                <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.16em] text-mist">
+                  Photo
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="w-full text-[13px] text-mist file:mr-3 file:rounded-full file:border-0 file:bg-brass file:px-3 file:py-1.5 file:text-ink"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    if (file.size > 400_000) {
+                      setError('Keep the photo under 400KB.');
+                      return;
+                    }
+                    const reader = new FileReader();
+                    reader.onload = () => setPhotoUrl(String(reader.result ?? ''));
+                    reader.readAsDataURL(file);
+                  }}
+                />
+                {photoUrl ? (
+                  <img src={photoUrl} alt="" className="mt-3 size-20 rounded-2xl object-cover" />
+                ) : null}
+                <p className="mt-1.5 text-[12px] text-mist/75">This device only until the API stores the file. Not a public profile photo.</p>
+              </div>
             ) : null}
           </FieldGroup>
         ) : null}

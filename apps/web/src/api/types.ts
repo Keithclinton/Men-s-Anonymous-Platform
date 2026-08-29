@@ -32,7 +32,8 @@ export interface SignupRequest {
 }
 
 export interface LoginRequest {
-  username: string;
+  username?: string;
+  email?: string;
   password: string;
 }
 
@@ -91,6 +92,28 @@ export interface SessionSummary {
   feedback?: Feedback | null;
 }
 
+export interface SessionMessage {
+  id: string;
+  bookingId: string;
+  sessionId?: string;
+  senderId: string;
+  senderHandle: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface SessionJoin {
+  bookingId: string;
+  sessionId: string;
+  channelType: SessionChannelType;
+  /** Short-lived room JWT for Socket.IO / the video vendor. */
+  token?: string | null;
+  /** Socket.IO path, default `/realtime`. */
+  wsPath?: string | null;
+  /** Managed WebRTC join URL (Daily / Twilio / Agora). Chat rooms omit this. */
+  joinUrl?: string | null;
+}
+
 export interface Booking {
   id: string;
   clientId: string;
@@ -100,6 +123,9 @@ export interface Booking {
   billingType: BillingType;
   status: BookingStatus;
   specialty: string | null;
+  channelType?: SessionChannelType;
+  /** Provider-facing handle for the client. Never vault PII. */
+  clientHandle?: string | null;
   declinedProviderIds?: string[];
   session: SessionSummary | null;
   createdAt?: string;

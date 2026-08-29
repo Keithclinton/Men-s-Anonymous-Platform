@@ -31,6 +31,10 @@ export function listAuditLog(limit = 100): Promise<AuditLogEntry[]> {
   return request<AuditLogEntry[]>(`/admin/audit-log?limit=${limit}`);
 }
 
+export function searchUsers(q: string): Promise<Array<{ id: string; username: string; role: string }>> {
+  return request(`/admin/users?q=${encodeURIComponent(q)}`);
+}
+
 export function breakGlass(
   pseudonymId: string,
   reason: string,

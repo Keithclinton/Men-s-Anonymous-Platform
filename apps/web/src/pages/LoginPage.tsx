@@ -7,14 +7,23 @@ import { Button } from '../components/ui/Button';
 import { Field, FieldGroup } from '../components/ui/Field';
 import { Notice } from '../components/ui/Notice';
 import { PasswordField } from '../components/ui/PasswordField';
+import { CrisisBanner } from '../components/safety/CrisisBanner';
+import { SESSION_EXPIRED_KEY } from '../lib/prefs';
 
 export function LoginPage() {
   const { signIn } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from ?? '/home';
+  const expired = (() => {
+    try {
+      return sessionStorage.getItem(SESSION_EXPIRED_KEY) === '1';
+    } catch {
+      return false;
+    }
+  })();
 
-  const [username, setUsername] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [persist, setPersist] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,11 +34,18 @@ export function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await signIn(username.trim(), password, persist);
-      navigate(from, { replace: true });
+      await signIn(identifier.trim(), password, persist);
+      try {
+        sessionStorage.removeItem(SESSION_EXPIRED_KEY);
+      } catch {
+        /* ignore */
+      }
+      navigate(from === '/login' ? '/home' : from, { replace: true });
     } catch (err) {
-      if (err instanceof ApiError && err.isUnauthorized) {
-        setError('Invalid handle or password.');
+      if (err instanceof ApiError && err.isRateLimited) {
+        setError(err.message);
+      } else if (err instanceof ApiError && err.isUnauthorized) {
+        setError('Invalid handle, email, or password.');
       } else if (err instanceof ApiError) {
         setError(err.message);
       } else {
@@ -46,14 +62,18 @@ export function LoginPage() {
       backLabel="Home"
       kicker="Sign in"
       title="Welcome back"
-      subtitle="Your handle is enough. Nothing else is required."
+      subtitle="Use your handle, or the email you vaulted for recovery."
       actions={
-        <Button type="submit" form="login-form" loading={submitting} disabled={!username.trim() || !password}>
+        <Button type="submit" form="login-form" loading={submitting} disabled={!identifier.trim() || !password}>
           Sign in
         </Button>
       }
       footer={
         <p className="text-center text-[14px] text-mist">
+          <Link to="/forgot" className="text-cream underline decoration-line underline-offset-4 hover:decoration-brass">
+            Forgot password
+          </Link>
+          <span className="mx-2">·</span>
           New here?{' '}
           <Link to="/register" className="text-cream underline decoration-line underline-offset-4 hover:decoration-brass">
             Create a handle
@@ -62,19 +82,21 @@ export function LoginPage() {
       }
     >
       <form id="login-form" onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
+        <CrisisBanner compact />
+        {expired ? <Notice>Your session ended. Sign in again.</Notice> : null}
         {error ? <Notice tone="danger">{error}</Notice> : null}
 
         <FieldGroup>
           <Field
-            label="Handle"
+            label="Handle or email"
             name="username"
             autoComplete="username"
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="quietoak42"
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
+            placeholder="quietoak42 or you@email.com"
           />
           <PasswordField
             label="Password"
