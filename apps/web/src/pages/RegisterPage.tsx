@@ -67,7 +67,10 @@ export function RegisterPage() {
 
   function goNext() {
     markTouched('username', 'password', 'confirm');
-    if (!step1Valid) return;
+    if (!step1Valid) {
+      setError('Check the highlighted fields above.');
+      return;
+    }
     if (!ageOk || !termsOk) {
       setError('Confirm you are 18+ and accept the terms.');
       return;
@@ -78,10 +81,15 @@ export function RegisterPage() {
 
   async function createAccount(includeRecovery: boolean) {
     if (isProvider) {
-      markTouched('email', 'password', 'confirm');
+      markTouched('email', 'username', 'password', 'confirm');
     }
     if (!step1Valid) {
       setStep(1);
+      setError(
+        isProvider && providerHandleErr
+          ? `Handle: ${providerHandleErr}`
+          : 'Check the highlighted fields above.',
+      );
       return;
     }
     if (!ageOk || !termsOk) {
